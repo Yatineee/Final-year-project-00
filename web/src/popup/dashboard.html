@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arete - Dashboard</title>
+    <link rel="stylesheet" href="./styles.css">
+    <style>
+      body {
+        min-width: 380px;
+        max-width: 500px;
+        background: #0f1117;
+        color: #e9edf5;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        padding: 20px;
+      }
+
+      .dashboard-shell {
+        background: #0f1117;
+      }
+
+      .header {
+        margin-bottom: 18px;
+      }
+
+      .header h1 {
+        font-size: 28px;
+        font-weight: 800;
+        color: #f5f7fb;
+      }
+
+      .card {
+        background: #151822;
+        border-radius: 16px;
+        padding: 18px;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+        border: 1px solid rgba(255,255,255,0.05);
+      }
+
+      .ring-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .ring {
+        --pct: 0;
+        width: 220px;
+        height: 220px;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at center, #0f1117 60%, transparent 61%),
+          conic-gradient(#f25b55 calc(var(--pct) * 1%), #303544 0);
+        display: grid;
+        place-items: center;
+        position: relative;
+      }
+
+      .ring-inner {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        background: #0f1117;
+        display: grid;
+        place-items: center;
+        text-align: center;
+      }
+
+      .time-total {
+        font-size: 32px;
+        font-weight: 800;
+        color: #f5f7fb;
+      }
+
+      .time-goal {
+        font-size: 15px;
+        color: #98a2b3;
+        margin-top: 6px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin: 16px 0;
+      }
+
+      .stat-card {
+        background: #151822;
+        border-radius: 16px;
+        padding: 14px;
+        border: 1px solid rgba(255,255,255,0.05);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+      }
+
+      .stat-label {
+        color: #98a2b3;
+        font-size: 13px;
+        letter-spacing: 0.3px;
+      }
+
+      .stat-value {
+        color: #f5f7fb;
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .section-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #f5f7fb;
+        margin: 14px 0 10px;
+      }
+
+      .list-card {
+        background: #151822;
+        border-radius: 16px;
+        padding: 12px;
+        border: 1px solid rgba(255,255,255,0.05);
+        box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+      }
+
+      .app-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .app-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 10px 6px;
+        border-radius: 12px;
+        background: #0f1117;
+        border: 1px solid rgba(255,255,255,0.04);
+      }
+
+      .app-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: #1f2431;
+        color: #7dd8ff;
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        font-size: 16px;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+
+      .app-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .app-avatar-fallback {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+      }
+
+      .app-info { flex: 1; }
+
+      .app-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+
+      .app-name {
+        color: #e9edf5;
+        font-weight: 700;
+        font-size: 15px;
+        text-transform: capitalize;
+      }
+
+      .app-time {
+        color: #7dd8ff;
+        font-weight: 700;
+        font-size: 15px;
+      }
+
+      .app-bar {
+        width: 100%;
+        height: 6px;
+        background: #1f2431;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .app-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #7dd8ff 0%, #4fa8ff 100%);
+        border-radius: 999px;
+        transition: width 0.3s ease;
+      }
+
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .btn {
+        flex: 1;
+        padding: 12px;
+        border: none;
+        border-radius: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .btn-primary { background: #7dd8ff; color: #0f1117; }
+      .btn-primary:hover { background: #6ac6f0; }
+
+      .btn-secondary { background: #1f2431; color: #e9edf5; }
+      .btn-secondary:hover { background: #272d3a; }
+
+      .loading, .error {
+        text-align: center;
+        padding: 12px;
+      }
+
+      .error {
+        background: rgba(255, 94, 94, 0.12);
+        border: 1px solid rgba(255, 94, 94, 0.4);
+        color: #ff9d9d;
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dashboard-shell">
+      <div class="header">
+        <img src="logo.png" alt="Arete" style="width: 40px; height: 40px; margin-bottom: 8px;">
+        <h1>Today</h1>
+      </div>
+
+      <div class="card ring-card">
+        <div class="ring" id="progress-ring">
+          <div class="ring-inner">
+            <div class="time-total" id="total-time">0h 0m</div>
+            <div class="time-goal" id="goal-text">of 4h 0m goal</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Apps Used</div>
+          <div class="stat-value" id="apps-used">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Time Left</div>
+          <div class="stat-value" id="over-goal">0h 0m</div>
+        </div>
+      </div>
+
+      <div class="section-title">Most Used</div>
+      <div class="list-card">
+        <div id="error-message" class="error" style="display:none;"></div>
+        <div id="loading" class="loading" style="display:none;">Loading...</div>
+        <div id="app-list" class="app-list"></div>
+      </div>
+
+      <div class="controls">
+        <button class="btn btn-primary" id="refresh-btn">Refresh</button>
+        <button class="btn btn-secondary" id="logout-btn">Sign Out</button>
+      </div>
+    </div>
+    
+    <script type="module" src="./dashboard.bundle.js"></script>
+  </body>
+</html>

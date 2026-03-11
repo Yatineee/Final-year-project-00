@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arete - Study Resources</title>
+    <link rel="stylesheet" href="arete.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <img src="images/Logo.png" alt="Arete Logo" class="logo-img">
+            <p class="tagline">Time redirected from social media → invested in growth</p>
+            <div class="timer">
+                <i class="fas fa-clock"></i>
+                <span id="timeCounter">0</span> seconds focused
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <div class="card fade-in" style="animation-delay: 0.1s">
+                <h3><i class="fas fa-book"></i> Study Resources</h3>
+                <ul class="resource-list">
+                    <li>
+                        <a href="https://www.khanacademy.org" target="_blank">
+                            <i class="fas fa-graduation-cap"></i>
+                            <div>
+                                <strong>Khan Academy</strong>
+                                <div class="resource-desc">Free courses in math, science, and more</div>
+                            </div>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://www.coursera.org" target="_blank">
+                            <i class="fas fa-university"></i>
+                            <div>
+                                <strong>Coursera</strong>
+                                <div class="resource-desc">University courses online</div>
+                            </div>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://www.edx.org" target="_blank">
+                            <i class="fas fa-laptop-code"></i>
+                            <div>
+                                <strong>edX</strong>
+                                <div class="resource-desc">MIT, Harvard courses for free</div>
+                            </div>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://www.freecodecamp.org" target="_blank">
+                            <i class="fas fa-code"></i>
+                            <div>
+                                <strong>freeCodeCamp</strong>
+                                <div class="resource-desc">Learn to code for free</div>
+                            </div>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card fade-in" style="animation-delay: 0.2s">
+                <h3><i class="fas fa-brain"></i> Productivity Tools</h3>
+                <ul class="resource-list">
+                    <li>
+                        <a href="https://pomofocus.io" target="_blank">
+                            <i class="fas fa-hourglass-half"></i>
+                            <div>
+                                <strong>Pomodoro Timer</strong>
+                                <div class="resource-desc">25-minute focus sessions</div>
+                            </div>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://www.notion.so" target="_blank">
+                            <i class="fas fa-sticky-note"></i>
+                            <div>
+                                <strong>Notion</strong>
+                                <div class="resource-desc">All-in-one workspace</div>
+                            </div>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://www.ankiweb.net" target="_blank">
+                            <i class="fas fa-flash"></i>
+                            <div>
+                                <strong>Anki</strong>
+                                <div class="resource-desc">Spaced repetition flashcards</div>
+                            </div>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://www.focusmate.com" target="_blank">
+                            <i class="fas fa-video"></i>
+                            <div>
+                                <strong>Focusmate</strong>
+                                <div class="resource-desc">Virtual coworking sessions</div>
+                            </div>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card fade-in" style="animation-delay: 0.3s">
+                <h3><i class="fas fa-exchange-alt"></i> Healthy Alternatives</h3>
+                <div class="alternatives-grid">
+                    <div class="alternative-card">
+                        <h4><i class="fas fa-headphones"></i> Podcasts</h4>
+                        <p>Learn while walking or resting</p>
+                    </div>
+                    <div class="alternative-card">
+                        <h4><i class="fas fa-book-open"></i> Reading</h4>
+                        <p>Build knowledge systematically</p>
+                    </div>
+                    <div class="alternative-card">
+                        <h4><i class="fas fa-pen-fancy"></i> Journaling</h4>
+                        <p>Reflect and plan your growth</p>
+                    </div>
+                    <div class="alternative-card">
+                        <h4><i class="fas fa-dumbbell"></i> Exercise</h4>
+                        <p>Physical activity boosts focus</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-buttons fade-in" style="animation-delay: 0.4s">
+            <button class="btn btn-primary" id="startStudyBtn">
+                <i class="fas fa-play-circle"></i>
+                Start 25-Minute Study Session
+            </button>
+            <button class="btn btn-goal">
+                <i class="fas fa-bullseye"></i> Set Daily Learning Goal
+            </button>
+        </div>
+
+        <div class="stats fade-in" style="animation-delay: 0.5s">
+            <h3>Your Progress</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number" id="savedMinutes">0</div>
+                    <div class="stat-label">Minutes saved from social media</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="learningStreak">0</div>
+                    <div class="stat-label">Day learning streak</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="redirectCount">0</div>
+                    <div class="stat-label">Times redirected to growth</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="arete.js"></script>
+</body>
+</html>

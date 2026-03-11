@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "534135491044",
+    "project_id": "synoptic-project-database00",
+    "storage_bucket": "synoptic-project-database00.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:534135491044:android:5335bb07849eb6dc985ff1",
+        "android_client_info": {
+          "package_name": "com.qian.scrollsanity"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCUpX_2UDsmM6SMjnXTddeIyRnnBgiebaQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

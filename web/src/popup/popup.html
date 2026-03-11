@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arete - Login</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="container">
+      <div class="login-box">
+        <!-- Close Button -->
+        <button class="close-btn">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+
+        <!-- Header -->
+        <div class="header">
+          <img src="logo.png" alt="Arete" style="width: 48px; height: 48px; margin-bottom: 8px;">
+          <h1 id="auth-title">Log In</h1>
+        </div>
+
+        <!-- Email Form -->
+        <form class="form" id="auth-form">
+          <div class="form-group">
+            <input
+              type="text"
+              placeholder="Email"
+              class="form-input"
+              id="email"
+            />
+          </div>
+
+          <div class="form-group">
+            <input
+              type="password"
+              placeholder="Password"
+              class="form-input"
+              id="password"
+            />
+          </div>
+
+          <!-- Forgot Password Link -->
+          <div class="forgot-password">
+            <span>Forgot your </span> 
+            <a href="#">password</a> <!-- Link to password recovery page -->
+            <span>?</span>
+          </div>
+
+          <!-- Login Button -->
+          <button type="submit" class="login-btn" id="email-signin">
+            Log In
+          </button>
+
+          <!-- Sign Up Button -->
+          <button type="button" class="login-btn" id="email-signup" style="display:none; margin-top: 10px;">
+            Sign Up
+          </button>
+
+          <!-- Toggle Link -->
+          <div class="forgot-password" style="margin-top: 10px;">
+            <span id="toggle-text">Don't have an account? </span> 
+            <a href="#" id="toggle-auth">Sign up</a>
+          </div>
+
+        </form>
+        <div class="auth-message" id="auth-message" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+    <script src="popup.bundle.js"></script>
+  </body>
+</html>
