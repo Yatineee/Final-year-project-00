@@ -1,6 +1,6 @@
 package com.qian.scrollsanity.domain.model.usagedata
 
-import com.qian.scrollsanity.data.TrackedAppId
+import com.qian.scrollsanity.data.usagedata.TrackedAppId
 
 /**
  * Represents a single continuous usage session of a tracked app.

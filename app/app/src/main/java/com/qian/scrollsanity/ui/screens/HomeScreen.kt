@@ -31,8 +31,8 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.qian.scrollsanity.data.usagedata.AppUsageInfo
-import com.qian.scrollsanity.data.PreferencesManager
-import com.qian.scrollsanity.data.TrackedApps
+import com.qian.scrollsanity.data.perferences.PreferencesManager
+import com.qian.scrollsanity.data.usagedata.TrackedApps
 import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
 import com.qian.scrollsanity.ui.theme.AreteAccent
 import com.qian.scrollsanity.ui.theme.AreteDanger

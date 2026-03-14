@@ -13,8 +13,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
-import com.qian.scrollsanity.data.FirestoreRepository
-import com.qian.scrollsanity.data.OnboardingInput
+import com.qian.scrollsanity.data.config.FirestoreRepository
+import com.qian.scrollsanity.data.onboarding.OnboardingInput
 
 @Composable
 fun OnboardingScreen(

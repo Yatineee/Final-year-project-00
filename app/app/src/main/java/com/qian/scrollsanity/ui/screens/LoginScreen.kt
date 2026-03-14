@@ -22,8 +22,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.qian.scrollsanity.data.AuthRepository
-import com.qian.scrollsanity.data.PreferencesManager
+import com.qian.scrollsanity.data.auth.AuthRepository
+import com.qian.scrollsanity.data.perferences.PreferencesManager
 import kotlinx.coroutines.launch
 
 @Composable

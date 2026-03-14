@@ -22,8 +22,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.firebase.auth.FirebaseAuth
-import com.qian.scrollsanity.data.PreferencesManager
-import com.qian.scrollsanity.data.TrackedApps
+import com.qian.scrollsanity.data.perferences.PreferencesManager
+import com.qian.scrollsanity.data.usagedata.TrackedApps
 import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
 import com.qian.scrollsanity.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch

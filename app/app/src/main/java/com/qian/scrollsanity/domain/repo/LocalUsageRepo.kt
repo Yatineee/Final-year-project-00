@@ -1,6 +1,6 @@
 package com.qian.scrollsanity.domain.repo
 
-import com.qian.scrollsanity.data.TrackedAppId
+import com.qian.scrollsanity.data.usagedata.TrackedAppId
 import com.qian.scrollsanity.domain.model.usagedata.AppSession
 
 interface LocalUsageRepo {

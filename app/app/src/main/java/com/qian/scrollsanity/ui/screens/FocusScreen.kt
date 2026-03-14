@@ -26,7 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.qian.scrollsanity.data.PreferencesManager
+import com.qian.scrollsanity.data.perferences.PreferencesManager
 import com.qian.scrollsanity.ui.theme.AretePrimaryDark
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

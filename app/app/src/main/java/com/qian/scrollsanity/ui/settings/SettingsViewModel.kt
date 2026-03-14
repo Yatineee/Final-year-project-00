@@ -3,11 +3,10 @@ package com.qian.scrollsanity.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.qian.scrollsanity.data.FirestoreRepository
-import com.qian.scrollsanity.data.PreferencesManager
-import com.qian.scrollsanity.domain.model.GoalItem
-import com.qian.scrollsanity.domain.model.UserPreferences
-import com.qian.scrollsanity.domain.model.UserProfile
+import com.qian.scrollsanity.data.config.FirestoreRepository
+import com.qian.scrollsanity.data.perferences.PreferencesManager
+import com.qian.scrollsanity.domain.model.user.GoalItem
+import com.qian.scrollsanity.domain.model.user.UserProfile
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 

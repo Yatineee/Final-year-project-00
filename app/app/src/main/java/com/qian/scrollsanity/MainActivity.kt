@@ -21,9 +21,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import com.qian.scrollsanity.data.FirestoreRepository
-import com.qian.scrollsanity.data.PreferencesManager
-import com.qian.scrollsanity.data.usagedata.UsageSyncHelper
+import com.qian.scrollsanity.data.config.FirestoreRepository
+import com.qian.scrollsanity.data.perferences.PreferencesManager
+import com.qian.scrollsanity.data.sync.UsageSyncHelper
 import com.qian.scrollsanity.service.UsageSyncService
 import com.qian.scrollsanity.ui.screens.FocusScreen
 import com.qian.scrollsanity.ui.screens.GateScreen

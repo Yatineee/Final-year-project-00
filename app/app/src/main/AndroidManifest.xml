@@ -46,7 +46,7 @@
 
         <!-- ✅ Blocker "redirect" screen -->
         <activity
-            android:name=".blocker.BlockerActivity"
+            android:name=".blocker.ui.BlockerActivity"
             android:exported="false"
             android:launchMode="singleTop"
             android:excludeFromRecents="true"
@@ -56,7 +56,7 @@
 
         <!-- ✅ Accessibility monitor (system-wide foreground app detection) -->
         <service
-            android:name=".blocker.AccessibilityMonitorService"
+            android:name=".blocker.monitor.AccessibilityMonitorService"
             android:exported="false"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

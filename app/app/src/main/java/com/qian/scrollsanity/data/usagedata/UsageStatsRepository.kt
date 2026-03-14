@@ -11,9 +11,6 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.util.Log
-import com.qian.scrollsanity.data.TrackedAppId
-import com.qian.scrollsanity.data.TrackedAppMeta
-import com.qian.scrollsanity.data.TrackedApps
 import com.qian.scrollsanity.domain.model.usagedata.AppSession
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
 import java.util.Calendar
