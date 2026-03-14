@@ -24,15 +24,17 @@ fun OnboardingScreen(
     val userId = remember { FirebaseAuth.getInstance().currentUser?.uid }
 
     var nickname by remember { mutableStateOf("") }
-    var habit by remember { mutableStateOf("") }
-    var goal by remember { mutableStateOf("") }
-    var recentChallenge by remember { mutableStateOf("") }
-    var preferStyle by remember { mutableStateOf("Gentle") } // Gentle / Direct / Coach
+    var recentGoalContext by remember { mutableStateOf("") }
+    var goalInput by remember { mutableStateOf("") }
+    var interestInput by remember { mutableStateOf("") }
+
+    var toneStyle by remember { mutableStateOf("gentle") }
+    var interventionIntensity by remember { mutableStateOf("MEDIUM") }
 
     var isSaving by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
-    val canSubmit = nickname.isNotBlank() && goal.isNotBlank() && !isSaving && userId != null
+    val canSubmit = nickname.isNotBlank() && !isSaving && userId != null
 
     Column(
         modifier = Modifier
@@ -41,6 +43,7 @@ fun OnboardingScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+
         Spacer(modifier = Modifier.height(10.dp))
 
         Text(
@@ -48,6 +51,7 @@ fun OnboardingScreen(
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold
         )
+
         Text(
             text = "Let’s set up your Arete profile. You can change these later in Settings.",
             style = MaterialTheme.typography.bodyMedium,
@@ -63,53 +67,61 @@ fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 label = { Text("Nickname") },
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Words
+                )
             )
         }
 
-        OnboardingCard(title = "Your daily goal") {
+        OnboardingCard(title = "What are you working toward?") {
             OutlinedTextField(
-                value = goal,
-                onValueChange = { goal = it },
+                value = recentGoalContext,
+                onValueChange = { recentGoalContext = it },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Goal (e.g., “≤ 2 hours”, “No TikTok after 11pm”)") },
+                minLines = 2,
+                label = { Text("Recent goal context (e.g. prepare IELTS)") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
         }
 
-        OnboardingCard(title = "Your usage habit (optional)") {
+        OnboardingCard(title = "Add an initial goal") {
             OutlinedTextField(
-                value = habit,
-                onValueChange = { habit = it },
+                value = goalInput,
+                onValueChange = { goalInput = it },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
-                label = { Text("When do you usually overuse?") }
+                label = { Text("Goal (e.g. No TikTok after 11pm)") }
             )
         }
 
-        OnboardingCard(title = "Recent challenge (optional)") {
+        OnboardingCard(title = "Your interests") {
             OutlinedTextField(
-                value = recentChallenge,
-                onValueChange = { recentChallenge = it },
+                value = interestInput,
+                onValueChange = { interestInput = it },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
-                label = { Text("What’s been hard lately?") }
+                label = { Text("Comma-separated (music, reading, fitness)") }
             )
         }
 
         OnboardingCard(title = "Preferred coaching style") {
             StyleChips(
-                selected = preferStyle,
-                onSelected = { preferStyle = it }
+                selected = toneStyle,
+                onSelected = { toneStyle = it }
             )
         }
 
-        if (errorMsg != null) {
+        OnboardingCard(title = "Intervention intensity") {
+            IntensityChips(
+                selected = interventionIntensity,
+                onSelected = { interventionIntensity = it }
+            )
+        }
+
+        errorMsg?.let {
             Text(
-                text = errorMsg!!,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
+                text = it,
+                color = MaterialTheme.colorScheme.error
             )
         }
 
@@ -118,24 +130,11 @@ fun OnboardingScreen(
         Button(
             onClick = {
                 if (userId == null) {
-                    errorMsg = "Not signed in. Please login again."
+                    errorMsg = "Not signed in."
                     return@Button
                 }
-
                 isSaving = true
                 errorMsg = null
-
-                // save to Firestore
-                val input = OnboardingInput(
-                    nickname = nickname.trim(),
-                    habit = habit.trim(),
-                    goal = goal.trim(),
-                    recentChallenge = recentChallenge.trim(),
-                    preferStyle = preferStyle.lowercase() // "gentle" / "direct" / "coach"
-                )
-
-                // fire-and-forget in LaunchedEffect scope
-                // (we use rememberCoroutineScope)
             },
             enabled = canSubmit,
             modifier = Modifier
@@ -148,26 +147,36 @@ fun OnboardingScreen(
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    // Submit logic (kept outside Button to keep composable clean)
-    val scope = rememberCoroutineScope()
     LaunchedEffect(isSaving) {
         if (!isSaving) return@LaunchedEffect
         if (userId == null) return@LaunchedEffect
 
+        val goals = listOf(goalInput.trim()).filter { it.isNotBlank() }
+
+        val interests = interestInput
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
         val input = OnboardingInput(
             nickname = nickname.trim(),
-            habit = habit.trim(),
-            goal = goal.trim(),
-            recentChallenge = recentChallenge.trim(),
-            preferStyle = preferStyle.lowercase()
+            toneStyle = toneStyle,
+            interventionIntensity = interventionIntensity,
+            recentGoalContext = recentGoalContext.ifBlank { null },
+            recentInterestContext = interests.takeIf { it.isNotEmpty() }?.joinToString(", "),
+            goals = goals,
+            interests = interests
         )
 
-        val res = firestoreRepo.completeOnboarding(userId, input)
+        val result = firestoreRepo.completeOnboarding(userId, input)
+
         isSaving = false
-        if (res.isSuccess) {
+
+        if (result.isSuccess) {
             onFinished()
         } else {
-            errorMsg = res.exceptionOrNull()?.message ?: "Failed to save. Please try again."
+            errorMsg = result.exceptionOrNull()?.message ?: "Failed to save."
         }
     }
 }
@@ -178,23 +187,18 @@ private fun OnboardingCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            content = {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                content()
-            }
-        )
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.SemiBold
+            )
+            content()
+        }
     }
 }
 
@@ -203,24 +207,13 @@ private fun StyleChips(
     selected: String,
     onSelected: (String) -> Unit
 ) {
-    val options = listOf(
-        "Gentle" to "Soft reminders",
-        "Coach" to "Motivating & structured",
-        "Direct" to "Short & firm"
-    )
+    val options = listOf("gentle", "coach", "direct")
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        options.forEach { (label, desc) ->
-            val isSelected = selected == label
+        options.forEach { option ->
             ElevatedCard(
-                onClick = { onSelected(label) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = if (isSelected)
-                        MaterialTheme.colorScheme.primaryContainer
-                    else
-                        MaterialTheme.colorScheme.surface
-                )
+                onClick = { onSelected(option) },
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
@@ -228,16 +221,48 @@ private fun StyleChips(
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = label, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            text = desc,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
+                    Text(
+                        text = option.replaceFirstChar { it.uppercase() },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (selected == option) {
+                        Text("✓")
                     }
-                    if (isSelected) {
-                        Text("✓", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IntensityChips(
+    selected: String,
+    onSelected: (String) -> Unit
+) {
+    val options = listOf("LOW", "MEDIUM", "HIGH")
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        options.forEach { option ->
+            ElevatedCard(
+                onClick = { onSelected(option) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Text(
+                        text = option,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (selected == option) {
+                        Text("✓")
                     }
                 }
             }

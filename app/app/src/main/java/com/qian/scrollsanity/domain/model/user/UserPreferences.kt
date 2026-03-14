@@ -16,27 +16,11 @@ import java.util.Date
  * You can remove them once UI/PreferencesManager migration is complete.
  */
 data class UserPreferences(
-
-    // =========================
-    // NEW (preferred)
-    // =========================
     val interventionIntensity: String = "MEDIUM",
     val toneStyle: String = "gentle",
-    val interests: List<String> = emptyList(),
     val recentGoalContext: String? = null,
+    val recentInterestContext: String? = null,
 
-    // =========================
-    // LEGACY (temporary)
-    // =========================
-    // Old logic / naming — keep for now to avoid breaking existing screens
-    val habit: String = "",
-    val goal: String = "",
-    val recentChallenge: String = "",
-    val preferStyle: String = "gentle",
-
-    // =========================
-    // EXISTING LOCAL SETTINGS
-    // =========================
     val dailyGoalMinutes: Int = 240,
     val notificationsEnabled: Boolean = true,
     val focusStrictMode: Boolean = false,
@@ -45,7 +29,5 @@ data class UserPreferences(
 
     @ServerTimestamp
     val lastSyncedAt: Date? = null,
-
-    // Optional client-side updatedAt (matches repo writes)
     val updatedAt: Long? = null
 )

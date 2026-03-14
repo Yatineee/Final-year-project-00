@@ -8,10 +8,11 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.qian.scrollsanity.data.onboarding.OnboardingInput
-import com.qian.scrollsanity.domain.model.user.UserPreferences
-import com.qian.scrollsanity.domain.model.user.UserProfile
 import com.qian.scrollsanity.domain.model.usagedata.AppUsageData
 import com.qian.scrollsanity.domain.model.user.GoalItem
+import com.qian.scrollsanity.domain.model.user.InterestItem
+import com.qian.scrollsanity.domain.model.user.UserPreferences
+import com.qian.scrollsanity.domain.model.user.UserProfile
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -19,12 +20,11 @@ import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.jvm.java
 
 class FirestoreRepository {
 
     private val firestore = FirebaseFirestore.getInstance()
-    private val TAG = "FirestoreRepository"
+    private val tag = "FirestoreRepository"
 
     companion object {
         private const val USERS_COLLECTION = "users"
@@ -34,12 +34,13 @@ class FirestoreRepository {
         private const val PREFERENCES_DOCUMENT = "preferences"
 
         private const val GOALS_COLLECTION = "goals"
+        private const val INTERESTS_COLLECTION = "interests"
+        private const val APPS_COLLECTION = "apps"
 
-        // Preferences fields (统一命名)
-        private const val FIELD_INTENSITY = "interventionIntensity"  // "LOW"|"MEDIUM"|"HIGH"
-        private const val FIELD_TONE_STYLE = "toneStyle"             // "gentle"|...
-        private const val FIELD_INTERESTS = "interests"              // List<String>
-        private const val FIELD_RECENT_GOAL = "recentGoalContext"    // String?
+        private const val FIELD_INTENSITY = "interventionIntensity"
+        private const val FIELD_TONE_STYLE = "toneStyle"
+        private const val FIELD_RECENT_GOAL = "recentGoalContext"
+        private const val FIELD_RECENT_INTEREST = "recentInterestContext"
         private const val FIELD_UPDATED_AT = "updatedAt"
     }
 
@@ -54,15 +55,13 @@ class FirestoreRepository {
         onboardingCompleted: Boolean = false,
         nickname: String? = null
     ): Result<Unit> = try {
-        // ⚠️ 用 map 避免 null 覆盖已有值
         val data = mutableMapOf<String, Any>(
             "uid" to userId,
             "email" to email,
             "onboardingCompleted" to onboardingCompleted,
-            "updatedAt" to System.currentTimeMillis()
+            "updatedAt" to System.currentTimeMillis(),
+            "createdAt" to System.currentTimeMillis()
         )
-        // createdAt 只在首次创建时写入；merge 不会覆盖已存在的 createdAt
-        data["createdAt"] = System.currentTimeMillis()
 
         displayName?.let { data["displayName"] = it }
         nickname?.let { data["nickname"] = it }
@@ -74,10 +73,10 @@ class FirestoreRepository {
             .set(data, SetOptions.merge())
             .await()
 
-        Log.d(TAG, "User profile created/merged for: $userId")
+        Log.d(tag, "User profile created/merged for: $userId")
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to create user profile", e)
+        Log.e(tag, "Failed to create user profile", e)
         Result.failure(e)
     }
 
@@ -91,27 +90,31 @@ class FirestoreRepository {
 
         Result.success(docToUserProfile(doc))
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to get user profile", e)
+        Log.e(tag, "Failed to get user profile", e)
         Result.failure(e)
     }
+
     fun observeUserProfile(userId: String): Flow<UserProfile?> = callbackFlow {
-        val reg = firestore.collection(USERS_COLLECTION)
+        val registration = firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
             .document(PROFILE_DOCUMENT)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Error observing profile", error)
+                    Log.e(tag, "Error observing profile", error)
                     close(error)
                     return@addSnapshotListener
                 }
                 trySend(snapshot?.let { docToUserProfile(it) })
             }
 
-        awaitClose { reg.remove() }
+        awaitClose { registration.remove() }
     }
 
-    suspend fun updateNickname(userId: String, nickname: String?): Result<Unit> = try {
+    suspend fun updateNickname(
+        userId: String,
+        nickname: String?
+    ): Result<Unit> = try {
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -127,11 +130,14 @@ class FirestoreRepository {
 
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to update nickname", e)
+        Log.e(tag, "Failed to update nickname", e)
         Result.failure(e)
     }
 
-    suspend fun updateDisplayName(userId: String, displayName: String?): Result<Unit> = try {
+    suspend fun updateDisplayName(
+        userId: String,
+        displayName: String?
+    ): Result<Unit> = try {
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -147,7 +153,7 @@ class FirestoreRepository {
 
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to update displayName", e)
+        Log.e(tag, "Failed to update displayName", e)
         Result.failure(e)
     }
 
@@ -155,7 +161,10 @@ class FirestoreRepository {
     // USER PREFERENCES
     // =====================================================
 
-    suspend fun syncPreferences(userId: String, preferences: UserPreferences): Result<Unit> = try {
+    suspend fun syncPreferences(
+        userId: String,
+        preferences: UserPreferences
+    ): Result<Unit> = try {
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -163,10 +172,10 @@ class FirestoreRepository {
             .set(preferences, SetOptions.merge())
             .await()
 
-        Log.d(TAG, "Preferences synced for: $userId")
+        Log.d(tag, "Preferences synced for: $userId")
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to sync preferences", e)
+        Log.e(tag, "Failed to sync preferences", e)
         Result.failure(e)
     }
 
@@ -180,28 +189,31 @@ class FirestoreRepository {
 
         Result.success(doc.toObject(UserPreferences::class.java))
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to get preferences", e)
+        Log.e(tag, "Failed to get preferences", e)
         Result.failure(e)
     }
 
     fun observePreferences(userId: String): Flow<UserPreferences?> = callbackFlow {
-        val reg = firestore.collection(USERS_COLLECTION)
+        val registration = firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
             .document(PREFERENCES_DOCUMENT)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Error observing preferences", error)
+                    Log.e(tag, "Error observing preferences", error)
                     close(error)
                     return@addSnapshotListener
                 }
                 trySend(snapshot?.toObject(UserPreferences::class.java))
             }
 
-        awaitClose { reg.remove() }
+        awaitClose { registration.remove() }
     }
 
-    suspend fun updateInterventionIntensity(userId: String, intensity: String): Result<Unit> = try {
+    suspend fun updateInterventionIntensity(
+        userId: String,
+        intensity: String
+    ): Result<Unit> = try {
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -214,13 +226,17 @@ class FirestoreRepository {
                 SetOptions.merge()
             )
             .await()
+
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to update intervention intensity", e)
+        Log.e(tag, "Failed to update intervention intensity", e)
         Result.failure(e)
     }
 
-    suspend fun updateToneStyle(userId: String, toneStyle: String): Result<Unit> = try {
+    suspend fun updateToneStyle(
+        userId: String,
+        toneStyle: String
+    ): Result<Unit> = try {
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -233,32 +249,17 @@ class FirestoreRepository {
                 SetOptions.merge()
             )
             .await()
+
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to update toneStyle", e)
+        Log.e(tag, "Failed to update toneStyle", e)
         Result.failure(e)
     }
 
-    suspend fun updateInterests(userId: String, interests: List<String>): Result<Unit> = try {
-        firestore.collection(USERS_COLLECTION)
-            .document(userId)
-            .collection(DATA_SUBCOLLECTION)
-            .document(PREFERENCES_DOCUMENT)
-            .set(
-                mapOf(
-                    FIELD_INTERESTS to interests.map { it.trim() }.filter { it.isNotBlank() },
-                    FIELD_UPDATED_AT to System.currentTimeMillis()
-                ),
-                SetOptions.merge()
-            )
-            .await()
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to update interests", e)
-        Result.failure(e)
-    }
-
-    suspend fun updateRecentGoalContext(userId: String, recentGoalContext: String?): Result<Unit> = try {
+    suspend fun updateRecentGoalContext(
+        userId: String,
+        recentGoalContext: String?
+    ): Result<Unit> = try {
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -271,71 +272,136 @@ class FirestoreRepository {
                 SetOptions.merge()
             )
             .await()
+
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to update recentGoalContext", e)
+        Log.e(tag, "Failed to update recentGoalContext", e)
+        Result.failure(e)
+    }
+
+    suspend fun updateRecentInterestContext(
+        userId: String,
+        recentInterestContext: String?
+    ): Result<Unit> = try {
+        firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .collection(DATA_SUBCOLLECTION)
+            .document(PREFERENCES_DOCUMENT)
+            .set(
+                mapOf(
+                    FIELD_RECENT_INTEREST to recentInterestContext,
+                    FIELD_UPDATED_AT to System.currentTimeMillis()
+                ),
+                SetOptions.merge()
+            )
+            .await()
+
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Log.e(tag, "Failed to update recentInterestContext", e)
         Result.failure(e)
     }
 
     // =====================================================
-    // ONBOARDING (atomic commit + seed goal)
+    // ONBOARDING
+    // Atomic commit + seed goal + seed interests
     // =====================================================
 
-    suspend fun completeOnboarding(userId: String, input: OnboardingInput): Result<Unit> = try {
+    suspend fun completeOnboarding(
+        userId: String,
+        input: OnboardingInput
+    ): Result<Unit> = try {
         val profileRef = firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
             .document(PROFILE_DOCUMENT)
 
-        val prefRef = firestore.collection(USERS_COLLECTION)
+        val preferencesRef = firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
             .document(PREFERENCES_DOCUMENT)
 
-        // 方案A：seed 一个 goal 到 goals 子集合（可选）
-        val seedText = (input.seedGoalText ?: input.goal).trim().takeIf { it.isNotBlank() }
-        val seedGoalRef = if (seedText != null) {
+        val cleanedGoals = input.goals
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        val cleanedInterests = input.interests
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        val goalRefs = cleanedGoals.map {
             firestore.collection(USERS_COLLECTION)
                 .document(userId)
                 .collection(GOALS_COLLECTION)
                 .document()
-        } else null
+        }
 
-        val tone = input.toneStyle.ifBlank { input.preferStyle.ifBlank { "gentle" } }
+        val interestRefs = cleanedInterests.map {
+            firestore.collection(USERS_COLLECTION)
+                .document(userId)
+                .collection(INTERESTS_COLLECTION)
+                .document()
+        }
+
+        val tone = input.toneStyle.ifBlank { "gentle" }
         val intensity = input.interventionIntensity.ifBlank { "MEDIUM" }.uppercase()
-        val recentGoal = input.recentGoalContext?.takeIf { it.isNotBlank() } ?: input.goal.takeIf { it.isNotBlank() }
+
+        val recentGoal = input.recentGoalContext
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: cleanedGoals.firstOrNull()
+
+        val recentInterest = input.recentInterestContext
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: cleanedInterests.takeIf { it.isNotEmpty() }?.joinToString(", ")
+
+        val now = System.currentTimeMillis()
 
         firestore.runBatch { batch ->
-            // profile：nickname + completed（displayName 如有也写）
             val profileMap = mutableMapOf<String, Any>(
                 "nickname" to input.nickname,
                 "onboardingCompleted" to true,
-                "updatedAt" to System.currentTimeMillis()
+                "updatedAt" to now
             )
             input.displayName?.let { profileMap["displayName"] = it }
+
             batch.set(profileRef, profileMap, SetOptions.merge())
 
-            // preferences：统一写入新字段
             batch.set(
-                prefRef,
+                preferencesRef,
                 mapOf(
-                    "interventionIntensity" to intensity,
-                    "toneStyle" to tone,
-                    "interests" to input.interests.map { it.trim() }.filter { it.isNotBlank() },
-                    "recentGoalContext" to recentGoal,
-                    "updatedAt" to System.currentTimeMillis()
+                    FIELD_INTENSITY to intensity,
+                    FIELD_TONE_STYLE to tone,
+                    FIELD_RECENT_GOAL to recentGoal,
+                    FIELD_RECENT_INTEREST to recentInterest,
+                    FIELD_UPDATED_AT to now
                 ),
                 SetOptions.merge()
             )
 
-            // seed goal：写入 goals collection
-            if (seedGoalRef != null && seedText != null) {
+            cleanedGoals.zip(goalRefs).forEach { (goalText, ref) ->
                 batch.set(
-                    seedGoalRef,
+                    ref,
                     mapOf(
-                        "text" to seedText,
+                        "text" to goalText,
                         "status" to "active",
-                        "createdAtMs" to System.currentTimeMillis(),
+                        "createdAtMs" to now,
+                        "createdAt" to FieldValue.serverTimestamp()
+                    ),
+                    SetOptions.merge()
+                )
+            }
+
+            cleanedInterests.zip(interestRefs).forEach { (interestText, ref) ->
+                batch.set(
+                    ref,
+                    mapOf(
+                        "text" to interestText,
+                        "status" to "active",
+                        "createdAtMs" to now,
                         "createdAt" to FieldValue.serverTimestamp()
                     ),
                     SetOptions.merge()
@@ -345,41 +411,43 @@ class FirestoreRepository {
 
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to complete onboarding", e)
+        Log.e(tag, "Failed to complete onboarding", e)
         Result.failure(e)
     }
 
     // =====================================================
-    // GOALS (Todo-style)
+    // GOALS
     // users/{uid}/goals/{goalId}
     // =====================================================
 
     fun observeGoals(userId: String): Flow<List<GoalItem>> = callbackFlow {
-        val reg = firestore.collection(USERS_COLLECTION)
+        val registration = firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(GOALS_COLLECTION)
             .orderBy("createdAtMs", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Error observing goals", error)
+                    Log.e(tag, "Error observing goals", error)
                     close(error)
                     return@addSnapshotListener
                 }
 
                 val goals = snapshot?.documents?.mapNotNull { doc ->
                     doc.toObject(GoalItem::class.java)?.copy(id = doc.id)
-                } ?: emptyList()
+                }.orEmpty()
 
                 trySend(goals)
             }
 
-        awaitClose { reg.remove() }
+        awaitClose { registration.remove() }
     }
 
     suspend fun addGoal(userId: String, text: String): Result<Unit> {
         return try {
             val trimmed = text.trim()
-            if (trimmed.isEmpty()) return Result.failure(IllegalArgumentException("Goal text is empty"))
+            if (trimmed.isEmpty()) {
+                return Result.failure(IllegalArgumentException("Goal text is empty"))
+            }
 
             firestore.collection(USERS_COLLECTION)
                 .document(userId)
@@ -398,12 +466,16 @@ class FirestoreRepository {
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add goal", e)
+            Log.e(tag, "Failed to add goal", e)
             Result.failure(e)
         }
     }
 
-    suspend fun setGoalAchieved(userId: String, goalId: String, achieved: Boolean): Result<Unit> = try {
+    suspend fun setGoalAchieved(
+        userId: String,
+        goalId: String,
+        achieved: Boolean
+    ): Result<Unit> = try {
         val ref = firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(GOALS_COLLECTION)
@@ -429,7 +501,7 @@ class FirestoreRepository {
 
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to update goal achieved", e)
+        Log.e(tag, "Failed to update goal achieved", e)
         Result.failure(e)
     }
 
@@ -443,16 +515,120 @@ class FirestoreRepository {
 
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to delete goal", e)
+        Log.e(tag, "Failed to delete goal", e)
         Result.failure(e)
     }
 
     // =====================================================
-    // UTILITY - delete profile/preferences/goals
+    // INTERESTS
+    // users/{uid}/interests/{interestId}
+    // =====================================================
+
+    fun observeInterests(userId: String): Flow<List<InterestItem>> = callbackFlow {
+        val registration = firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .collection(INTERESTS_COLLECTION)
+            .orderBy("createdAtMs", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(tag, "Error observing interests", error)
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                val interests = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(InterestItem::class.java)?.copy(id = doc.id)
+                }.orEmpty()
+
+                trySend(interests)
+            }
+
+        awaitClose { registration.remove() }
+    }
+
+    suspend fun addInterest(userId: String, text: String): Result<Unit> {
+        return try {
+            val trimmed = text.trim()
+            if (trimmed.isEmpty()) {
+                return Result.failure(IllegalArgumentException("Interest text is empty"))
+            }
+
+            firestore.collection(USERS_COLLECTION)
+                .document(userId)
+                .collection(INTERESTS_COLLECTION)
+                .document()
+                .set(
+                    mapOf(
+                        "text" to trimmed,
+                        "status" to "active",
+                        "createdAtMs" to System.currentTimeMillis(),
+                        "createdAt" to FieldValue.serverTimestamp()
+                    ),
+                    SetOptions.merge()
+                )
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to add interest", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setInterestAchieved(
+        userId: String,
+        interestId: String,
+        achieved: Boolean
+    ): Result<Unit> = try {
+        val ref = firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .collection(INTERESTS_COLLECTION)
+            .document(interestId)
+
+        if (achieved) {
+            ref.set(
+                mapOf(
+                    "status" to "achieved",
+                    "achievedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).await()
+        } else {
+            ref.set(
+                mapOf(
+                    "status" to "active",
+                    "achievedAt" to null
+                ),
+                SetOptions.merge()
+            ).await()
+        }
+
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Log.e(tag, "Failed to update interest achieved", e)
+        Result.failure(e)
+    }
+
+    suspend fun deleteInterest(userId: String, interestId: String): Result<Unit> = try {
+        firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .collection(INTERESTS_COLLECTION)
+            .document(interestId)
+            .delete()
+            .await()
+
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Log.e(tag, "Failed to delete interest", e)
+        Result.failure(e)
+    }
+
+    // =====================================================
+    // DELETE USER DATA
+    // profile / preferences / goals / interests
     // =====================================================
 
     suspend fun deleteUserData(userId: String): Result<Unit> = try {
-        // Delete preferences
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -460,7 +636,6 @@ class FirestoreRepository {
             .delete()
             .await()
 
-        // Delete profile
         firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(DATA_SUBCOLLECTION)
@@ -468,27 +643,34 @@ class FirestoreRepository {
             .delete()
             .await()
 
-        // Delete goals
         val goalsSnap = firestore.collection(USERS_COLLECTION)
             .document(userId)
             .collection(GOALS_COLLECTION)
             .get()
             .await()
 
+        val interestsSnap = firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .collection(INTERESTS_COLLECTION)
+            .get()
+            .await()
+
         firestore.runBatch { batch ->
             goalsSnap.documents.forEach { batch.delete(it.reference) }
+            interestsSnap.documents.forEach { batch.delete(it.reference) }
         }.await()
 
-        Log.d(TAG, "User data deleted for: $userId")
+        Log.d(tag, "User data deleted for: $userId")
         Result.success(Unit)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to delete user data", e)
+        Log.e(tag, "Failed to delete user data", e)
         Result.failure(e)
     }
+
     // =====================================================
-// APP USAGE STATISTICS
-// users/{uid}/apps/{appId}
-// =====================================================
+    // APP USAGE STATISTICS
+    // users/{uid}/apps/{appId}
+    // =====================================================
 
     suspend fun incrementAppUsage(
         userId: String,
@@ -496,10 +678,9 @@ class FirestoreRepository {
         deltaSeconds: Long,
         date: String
     ): Result<Unit> = try {
-
-        firestore.collection("users")
+        firestore.collection(USERS_COLLECTION)
             .document(userId)
-            .collection("apps")
+            .collection(APPS_COLLECTION)
             .document(appId)
             .set(
                 mapOf(
@@ -512,45 +693,41 @@ class FirestoreRepository {
             .await()
 
         Result.success(Unit)
-
     } catch (e: Exception) {
         Result.failure(e)
     }
 
-    suspend fun getAllAppUsageToday(
-        userId: String
-    ): Result<List<AppUsageData>> = try {
+    suspend fun getAllAppUsageToday(userId: String): Result<List<AppUsageData>> = try {
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            .format(Date())
-
-        val docs = firestore.collection("users")
+        val docs = firestore.collection(USERS_COLLECTION)
             .document(userId)
-            .collection("apps")
+            .collection(APPS_COLLECTION)
             .whereEqualTo("date", dateStr)
             .get()
             .await()
 
         Result.success(
-            docs.documents.mapNotNull {
-                it.toObject(AppUsageData::class.java)
-            }
+            docs.documents.mapNotNull { it.toObject(AppUsageData::class.java) }
         )
-
     } catch (e: Exception) {
         Result.failure(e)
     }
 
+    // =====================================================
+    // MAPPERS
+    // =====================================================
+
     private fun docToUserProfile(doc: DocumentSnapshot): UserProfile? {
         if (!doc.exists()) return null
 
-        fun anyToLong(v: Any?): Long {
-            return when (v) {
-                is Long -> v
-                is Int -> v.toLong()
-                is Double -> v.toLong()
-                is Timestamp -> v.toDate().time
-                is Date -> v.time
+        fun anyToLong(value: Any?): Long {
+            return when (value) {
+                is Long -> value
+                is Int -> value.toLong()
+                is Double -> value.toLong()
+                is Timestamp -> value.toDate().time
+                is Date -> value.time
                 else -> 0L
             }
         }
@@ -568,4 +745,3 @@ class FirestoreRepository {
         )
     }
 }
-

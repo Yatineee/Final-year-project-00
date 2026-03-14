@@ -3,12 +3,17 @@ package com.qian.scrollsanity.data.perferences
 import android.content.Context
 import android.util.Log
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.firebase.auth.FirebaseAuth
+import com.qian.scrollsanity.data.config.FirestoreRepository
 import com.qian.scrollsanity.data.usagedata.TrackedAppId
 import com.qian.scrollsanity.data.usagedata.TrackedApps
-import com.qian.scrollsanity.data.config.FirestoreRepository
 import com.qian.scrollsanity.domain.model.user.UserPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -23,7 +28,6 @@ class PreferencesManager(private val context: Context) {
 
     private object PreferencesKeys {
         // ===== Existing local settings =====
-        val DAILY_GOAL_MINUTES = intPreferencesKey("daily_goal_minutes")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val FOCUS_STRICT_MODE = booleanPreferencesKey("focus_strict_mode")
         val DARK_MODE = stringPreferencesKey("dark_mode")
@@ -39,28 +43,16 @@ class PreferencesManager(private val context: Context) {
         // Auth state
         val IS_USER_LOGGED_IN = booleanPreferencesKey("is_user_logged_in")
 
-        // ===== NEW: Intervention / language generation preferences =====
+        // ===== Intervention / language generation preferences =====
         val INTERVENTION_INTENSITY = stringPreferencesKey("intervention_intensity") // "LOW"|"MEDIUM"|"HIGH"
-        val TONE_STYLE = stringPreferencesKey("tone_style") // "gentle"|...
-        val INTERESTS = stringSetPreferencesKey("interests") // store as set
-        val RECENT_GOAL_CONTEXT = stringPreferencesKey("recent_goal_context") // optional string
-
-
+        val TONE_STYLE = stringPreferencesKey("tone_style") // "gentle" | "humorous" | "direct"
+        val RECENT_GOAL_CONTEXT = stringPreferencesKey("recent_goal_context")
+        val RECENT_INTEREST_CONTEXT = stringPreferencesKey("recent_interest_context")
     }
 
     // =====================================================
-    // Existing Local Settings (kept)
+    // Existing Local Settings
     // =====================================================
-
-    val dailyGoalMinutes: Flow<Int> = context.dataStore.data
-        .map { prefs -> prefs[PreferencesKeys.DAILY_GOAL_MINUTES] ?: 240 }
-
-    suspend fun setDailyGoalMinutes(minutes: Int) {
-        context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.DAILY_GOAL_MINUTES] = minutes
-        }
-        syncPreferencesToFirestore()
-    }
 
     val notificationsEnabled: Flow<Boolean> = context.dataStore.data
         .map { prefs -> prefs[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true }
@@ -89,7 +81,7 @@ class PreferencesManager(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.DARK_MODE] = mode
         }
-        // Dark mode change doesn’t have to hit Firestore unless you want it to.
+        // Dark mode is local UI preference; cloud sync optional.
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
@@ -101,13 +93,17 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
-    // NEW: Enabled tracked apps
+    // Enabled tracked apps
     val enabledTrackedApps: Flow<Set<TrackedAppId>> = context.dataStore.data
         .map { prefs ->
-            val raw = prefs[PreferencesKeys.ENABLED_TRACKED_APPS] ?: TrackedApps.defaultEnabledIdStrings()
-            raw.mapNotNull { s -> runCatching { TrackedAppId.valueOf(s) }.getOrNull() }
-                .toSet()
-                .ifEmpty { TrackedApps.allIds }
+            val raw = prefs[PreferencesKeys.ENABLED_TRACKED_APPS]
+                ?: TrackedApps.defaultEnabledIdStrings()
+
+            raw.mapNotNull { s ->
+                runCatching { TrackedAppId.valueOf(s) }.getOrNull()
+            }.toSet().ifEmpty {
+                TrackedApps.allIds
+            }
         }
 
     suspend fun setEnabledTrackedApps(ids: Set<TrackedAppId>) {
@@ -119,24 +115,35 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun setTrackedAppEnabled(id: TrackedAppId, enabled: Boolean) {
         context.dataStore.edit { prefs ->
-            val current = (prefs[PreferencesKeys.ENABLED_TRACKED_APPS] ?: TrackedApps.defaultEnabledIdStrings())
-                .toMutableSet()
+            val current = (
+                    prefs[PreferencesKeys.ENABLED_TRACKED_APPS]
+                        ?: TrackedApps.defaultEnabledIdStrings()
+                    ).toMutableSet()
 
             if (enabled) current.add(id.name) else current.remove(id.name)
 
-            if (current.isEmpty()) current.addAll(TrackedApps.defaultEnabledIdStrings())
+            if (current.isEmpty()) {
+                current.addAll(TrackedApps.defaultEnabledIdStrings())
+            }
 
             prefs[PreferencesKeys.ENABLED_TRACKED_APPS] = current
         }
         syncPreferencesToFirestore()
     }
 
+    // =====================================================
     // Focus Session State
+    // =====================================================
+
     val isFocusActive: Flow<Boolean> = context.dataStore.data
         .map { prefs ->
             val isActive = prefs[PreferencesKeys.IS_FOCUS_ACTIVE] ?: false
             val endTime = prefs[PreferencesKeys.FOCUS_END_TIME] ?: 0L
-            if (isActive && endTime > 0 && System.currentTimeMillis() > endTime) false else isActive
+            if (isActive && endTime > 0 && System.currentTimeMillis() > endTime) {
+                false
+            } else {
+                isActive
+            }
         }
 
     val focusEndTime: Flow<Long> = context.dataStore.data
@@ -157,7 +164,10 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
-    // Auth state
+    // =====================================================
+    // Auth State
+    // =====================================================
+
     val isUserLoggedIn: Flow<Boolean> = context.dataStore.data
         .map { prefs -> prefs[PreferencesKeys.IS_USER_LOGGED_IN] ?: false }
 
@@ -174,11 +184,13 @@ class PreferencesManager(private val context: Context) {
     }
 
     suspend fun clearAll() {
-        context.dataStore.edit { prefs -> prefs.clear() }
+        context.dataStore.edit { prefs ->
+            prefs.clear()
+        }
     }
 
     // =====================================================
-    // NEW: Intervention Preferences (DataStore + Firestore sync)
+    // Intervention Preferences
     // =====================================================
 
     /** "LOW" | "MEDIUM" | "HIGH" */
@@ -209,31 +221,19 @@ class PreferencesManager(private val context: Context) {
 
     /** e.g. "gentle", "humorous", "direct" */
     val toneStyle: Flow<String> = context.dataStore.data
-        .map { prefs -> prefs[PreferencesKeys.TONE_STYLE] ?: "gentle" }
+        .map { prefs ->
+            prefs[PreferencesKeys.TONE_STYLE]?.trim()?.ifBlank { "gentle" } ?: "gentle"
+        }
 
     suspend fun setToneStyle(style: String) {
+        val cleaned = style.trim().ifBlank { "gentle" }
         context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.TONE_STYLE] = style
+            prefs[PreferencesKeys.TONE_STYLE] = cleaned
         }
         syncPreferencesToFirestore()
     }
 
-    /** Interests stored as a set locally; emitted as a sorted list for stable UI */
-    val interests: Flow<List<String>> = context.dataStore.data
-        .map { prefs ->
-            val set = prefs[PreferencesKeys.INTERESTS] ?: emptySet()
-            set.map { it.trim() }.filter { it.isNotBlank() }.sorted()
-        }
-
-    suspend fun setInterests(items: List<String>) {
-        val cleaned = items.map { it.trim() }.filter { it.isNotBlank() }.toSet()
-        context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.INTERESTS] = cleaned
-        }
-        syncPreferencesToFirestore()
-    }
-
-    /** Recent goal context like "prepare IELTS" */
+    /** Recent goal summary for prompt engineering, e.g. "prepare IELTS" */
     val recentGoalContext: Flow<String?> = context.dataStore.data
         .map { prefs ->
             prefs[PreferencesKeys.RECENT_GOAL_CONTEXT]
@@ -244,20 +244,45 @@ class PreferencesManager(private val context: Context) {
     suspend fun setRecentGoalContext(text: String?) {
         val cleaned = text?.trim()?.takeIf { it.isNotBlank() }
         context.dataStore.edit { prefs ->
-            if (cleaned == null) prefs.remove(PreferencesKeys.RECENT_GOAL_CONTEXT)
-            else prefs[PreferencesKeys.RECENT_GOAL_CONTEXT] = cleaned
+            if (cleaned == null) {
+                prefs.remove(PreferencesKeys.RECENT_GOAL_CONTEXT)
+            } else {
+                prefs[PreferencesKeys.RECENT_GOAL_CONTEXT] = cleaned
+            }
+        }
+        syncPreferencesToFirestore()
+    }
+
+    /** Recent interest summary for prompt engineering, e.g. "music, drawing, fitness" */
+    val recentInterestContext: Flow<String?> = context.dataStore.data
+        .map { prefs ->
+            prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT]
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+        }
+
+    suspend fun setRecentInterestContext(text: String?) {
+        val cleaned = text?.trim()?.takeIf { it.isNotBlank() }
+        context.dataStore.edit { prefs ->
+            if (cleaned == null) {
+                prefs.remove(PreferencesKeys.RECENT_INTEREST_CONTEXT)
+            } else {
+                prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT] = cleaned
+            }
         }
         syncPreferencesToFirestore()
     }
 
     // =====================================================
-    // FIRESTORE SYNC (Updated)
+    // Firestore Sync
     // =====================================================
 
     /**
      * Sync current local preferences (DataStore) to Firestore
      *
-     * IMPORTANT: This should NOT upload daily usage events; only preference fields.
+     * IMPORTANT:
+     * - Only sync preference / prompt-context style fields
+     * - Do NOT upload usage events or runtime analytics here
      */
     private suspend fun syncPreferencesToFirestore() {
         val userId = firebaseAuth.currentUser?.uid ?: return
@@ -266,21 +291,19 @@ class PreferencesManager(private val context: Context) {
             val prefs = context.dataStore.data.first()
 
             val userPreferences = UserPreferences(
-                // NEW fields
                 interventionIntensity = (prefs[PreferencesKeys.INTERVENTION_INTENSITY] ?: "MEDIUM").uppercase(),
                 toneStyle = prefs[PreferencesKeys.TONE_STYLE] ?: "gentle",
-                interests = (prefs[PreferencesKeys.INTERESTS] ?: emptySet()).toList(),
                 recentGoalContext = prefs[PreferencesKeys.RECENT_GOAL_CONTEXT],
+                recentInterestContext = prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT],
 
-                // Existing local settings (still synced, since you were doing it)
-                dailyGoalMinutes = prefs[PreferencesKeys.DAILY_GOAL_MINUTES] ?: 240,
                 notificationsEnabled = prefs[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true,
                 focusStrictMode = prefs[PreferencesKeys.FOCUS_STRICT_MODE] ?: false,
                 darkMode = prefs[PreferencesKeys.DARK_MODE] ?: "system",
-                enabledTrackedApps = (prefs[PreferencesKeys.ENABLED_TRACKED_APPS]
-                    ?: TrackedApps.defaultEnabledIdStrings()).toList(),
+                enabledTrackedApps = (
+                        prefs[PreferencesKeys.ENABLED_TRACKED_APPS]
+                            ?: TrackedApps.defaultEnabledIdStrings()
+                        ).toList(),
 
-                // Optional client updatedAt
                 updatedAt = System.currentTimeMillis()
             )
 
@@ -292,7 +315,7 @@ class PreferencesManager(private val context: Context) {
 
     /**
      * Load preferences from Firestore (called on login)
-     * - Pulls both NEW and existing settings into DataStore
+     * - Pulls intervention preferences and local settings into DataStore
      */
     suspend fun loadPreferencesFromFirestore(): Boolean {
         val userId = firebaseAuth.currentUser?.uid ?: return false
@@ -303,24 +326,37 @@ class PreferencesManager(private val context: Context) {
 
             if (firestorePrefs != null) {
                 context.dataStore.edit { prefs ->
-                    // NEW fields
                     prefs[PreferencesKeys.INTERVENTION_INTENSITY] =
                         firestorePrefs.interventionIntensity.ifBlank { "MEDIUM" }.uppercase()
+
                     prefs[PreferencesKeys.TONE_STYLE] =
                         firestorePrefs.toneStyle.ifBlank { "gentle" }
-                    prefs[PreferencesKeys.INTERESTS] =
-                        firestorePrefs.interests.map { it.trim() }.filter { it.isNotBlank() }.toSet()
 
-                    firestorePrefs.recentGoalContext?.trim()?.takeIf { it.isNotBlank() }?.let {
-                        prefs[PreferencesKeys.RECENT_GOAL_CONTEXT] = it
-                    } ?: prefs.remove(PreferencesKeys.RECENT_GOAL_CONTEXT)
+                    firestorePrefs.recentGoalContext
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            prefs[PreferencesKeys.RECENT_GOAL_CONTEXT] = it
+                        } ?: prefs.remove(PreferencesKeys.RECENT_GOAL_CONTEXT)
 
-                    // Existing local settings
-                    prefs[PreferencesKeys.DAILY_GOAL_MINUTES] = firestorePrefs.dailyGoalMinutes
-                    prefs[PreferencesKeys.NOTIFICATIONS_ENABLED] = firestorePrefs.notificationsEnabled
-                    prefs[PreferencesKeys.FOCUS_STRICT_MODE] = firestorePrefs.focusStrictMode
-                    prefs[PreferencesKeys.DARK_MODE] = firestorePrefs.darkMode
-                    prefs[PreferencesKeys.ENABLED_TRACKED_APPS] = firestorePrefs.enabledTrackedApps.toSet()
+                    firestorePrefs.recentInterestContext
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT] = it
+                        } ?: prefs.remove(PreferencesKeys.RECENT_INTEREST_CONTEXT)
+
+                    prefs[PreferencesKeys.NOTIFICATIONS_ENABLED] =
+                        firestorePrefs.notificationsEnabled
+
+                    prefs[PreferencesKeys.FOCUS_STRICT_MODE] =
+                        firestorePrefs.focusStrictMode
+
+                    prefs[PreferencesKeys.DARK_MODE] =
+                        firestorePrefs.darkMode
+
+                    prefs[PreferencesKeys.ENABLED_TRACKED_APPS] =
+                        firestorePrefs.enabledTrackedApps.toSet()
                 }
 
                 Log.d("PreferencesManager", "Preferences loaded from Firestore")
