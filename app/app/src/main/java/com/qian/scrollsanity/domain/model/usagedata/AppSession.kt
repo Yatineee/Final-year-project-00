@@ -1,4 +1,4 @@
-package com.qian.scrollsanity.domain.model
+package com.qian.scrollsanity.domain.model.usagedata
 
 import com.qian.scrollsanity.data.TrackedAppId
 

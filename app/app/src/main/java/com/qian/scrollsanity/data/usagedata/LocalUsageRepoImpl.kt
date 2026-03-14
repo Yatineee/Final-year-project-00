@@ -1,7 +1,9 @@
-package com.qian.scrollsanity.data
+package com.qian.scrollsanity.data.usagedata
 
-import com.qian.scrollsanity.domain.model.AppSession
+import com.qian.scrollsanity.data.TrackedAppId
+import com.qian.scrollsanity.domain.model.usagedata.AppSession
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
+
 class LocalUsageRepoImpl(
     private val usage: UsageStatsRepository
 ) : LocalUsageRepo {

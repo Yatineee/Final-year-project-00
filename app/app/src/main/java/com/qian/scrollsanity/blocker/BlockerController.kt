@@ -7,13 +7,13 @@ import android.util.Log
 import com.qian.scrollsanity.data.PreferencesManager
 import com.qian.scrollsanity.data.TrackedAppId
 import com.qian.scrollsanity.data.TrackedApps
-import com.qian.scrollsanity.data.UsageStatsRepository
+import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
 import com.qian.scrollsanity.domain.policy.DeviationInterventionPolicy
+import com.qian.scrollsanity.domain.repo.LocalUsageRepo
 import com.qian.scrollsanity.domain.trigger.CooldownPolicy
 import com.qian.scrollsanity.domain.trigger.InterventionSessionState
 import com.qian.scrollsanity.domain.usecase.EnabledTrackedProvider
 import com.qian.scrollsanity.domain.usecase.IntensityProvider
-import com.qian.scrollsanity.domain.usecase.LocalUsageProvider
 import com.qian.scrollsanity.domain.usecase.MaybeRunInterventionCheckUseCase
 import com.qian.scrollsanity.domain.usecase.TriggerResult
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +60,8 @@ object BlockerController {
     private const val EXTRA_Z = "z_score"
     private const val EXTRA_REASON = "reason"
 
+    private var currentSessionStartElapsedMs: Long? = null;
+
     fun onAccessibilityConnected(context: Context) {
         Log.d(TAG, "Accessibility service connected")
     }
@@ -96,6 +98,7 @@ object BlockerController {
                     if (sessionState.inBlockedSession) {
                         Log.d(TAG, "Leaving tracked session, reset state.")
                     }
+                    currentSessionStartElapsedMs = null
                     sessionState = sessionState.copy(
                         inBlockedSession = false,
                         currentPackage = null,
@@ -107,20 +110,23 @@ object BlockerController {
                 // entering tracked session
                 if (!sessionState.inBlockedSession || sessionState.currentPackage != packageName) {
                     Log.d(TAG, "Entering tracked session: $packageName")
+                    currentSessionStartElapsedMs = now
                     sessionState = sessionState.copy(
                         inBlockedSession = true,
                         currentPackage = packageName,
-                        // NOTE: do not reset lastCheckAtMs; cooldown should control frequency
                         askedUsageTypeThisSession = false
                     )
                 }
 
                 // Build usecase with providers
                 val useCase = buildUseCase(context)
+                val sessionStart = currentSessionStartElapsedMs ?: now
+                val currentSessionMinutes = ((now - sessionStart) / 60_000L).toInt().coerceAtLeast(0)
 
                 val (newState, result) = useCase.run(
                     nowMs = now,
-                    state = sessionState
+                    state = sessionState,
+                    currentSessionMinutes = currentSessionMinutes
                 )
                 sessionState = newState
 
@@ -160,10 +166,10 @@ object BlockerController {
     private fun buildUseCase(context: Context): MaybeRunInterventionCheckUseCase {
         val prefsManager = PreferencesManager(context)
         val usageRepoReal = UsageStatsRepository(context)
+        val localUsageRepo: LocalUsageRepo = usageRepoReal
 
         val intensityProvider = object : IntensityProvider {
             override suspend fun getIntensity(): String {
-                // PreferencesManager returns "LOW|MEDIUM|HIGH"
                 return prefsManager.interventionIntensity.first()
             }
         }
@@ -174,26 +180,12 @@ object BlockerController {
             }
         }
 
-        val usageProvider = object : LocalUsageProvider {
-            override suspend fun getTodayTotalMinutes(enabled: Set<TrackedAppId>): Int {
-                // Cheap: one call aggregates using UsageEvents in your repo
-                return usageRepoReal.getTodayUsageStats(enabled).sumOf { it.usageTimeMinutes }
-            }
-
-            override suspend fun getBaseline7DaysMinutes(enabled: Set<TrackedAppId>): List<Int> {
-                // baseline = past 7 days EXCLUDING today
-                // getUsageStatsForDays(8): [today, yesterday, ... 7 days ago]
-                val days8 = usageRepoReal.getUsageStatsForDays(days = 8, enabled = enabled)
-                return days8.drop(1).take(7).map { it.totalMinutes }
-            }
-        }
-
         return MaybeRunInterventionCheckUseCase(
             cooldownPolicy = cooldownPolicy,
             deviationPolicy = deviationPolicy,
             intensityProvider = intensityProvider,
             enabledProvider = enabledProvider,
-            usageProvider = usageProvider
+            localUsageRepo = localUsageRepo
         )
     }
 

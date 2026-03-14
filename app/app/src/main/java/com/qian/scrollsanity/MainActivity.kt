@@ -23,7 +23,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.qian.scrollsanity.data.FirestoreRepository
 import com.qian.scrollsanity.data.PreferencesManager
-import com.qian.scrollsanity.data.UsageSyncHelper
+import com.qian.scrollsanity.data.usagedata.UsageSyncHelper
 import com.qian.scrollsanity.service.UsageSyncService
 import com.qian.scrollsanity.ui.screens.FocusScreen
 import com.qian.scrollsanity.ui.screens.GateScreen

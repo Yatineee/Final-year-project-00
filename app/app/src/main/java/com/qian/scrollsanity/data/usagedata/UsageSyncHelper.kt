@@ -1,8 +1,10 @@
-package com.qian.scrollsanity.data
+package com.qian.scrollsanity.data.usagedata
 
 import android.content.Context
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.qian.scrollsanity.data.FirestoreRepository
+import com.qian.scrollsanity.domain.model.usagedata.AppUsageData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -189,7 +191,7 @@ class UsageSyncHelper(private val context: Context) {
     /**
      * Get all app usage from Firestore for today
      */
-    suspend fun getTodayUsageFromFirestore(): List<com.qian.scrollsanity.domain.model.AppUsageData> {
+    suspend fun getTodayUsageFromFirestore(): List<AppUsageData> {
         val userId = firebaseAuth.currentUser?.uid ?: return emptyList()
 
         return try {

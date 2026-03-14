@@ -14,9 +14,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.qian.scrollsanity.data.AppCategory
-import com.qian.scrollsanity.data.AppUsageInfo
-import com.qian.scrollsanity.data.UsageStatsRepository
+import com.qian.scrollsanity.data.usagedata.AppCategory
+import com.qian.scrollsanity.data.usagedata.AppUsageInfo
+import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
 import com.qian.scrollsanity.ui.util.formatTime
 
 

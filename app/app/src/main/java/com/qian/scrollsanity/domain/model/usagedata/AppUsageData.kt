@@ -1,4 +1,4 @@
-package com.qian.scrollsanity.domain.model
+package com.qian.scrollsanity.domain.model.usagedata
 
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.ServerTimestamp

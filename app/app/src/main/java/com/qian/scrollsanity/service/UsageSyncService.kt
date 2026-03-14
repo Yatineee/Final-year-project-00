@@ -11,7 +11,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.qian.scrollsanity.R
-import com.qian.scrollsanity.data.UsageSyncHelper
+import com.qian.scrollsanity.data.usagedata.UsageSyncHelper
 import kotlinx.coroutines.*
 
 /**

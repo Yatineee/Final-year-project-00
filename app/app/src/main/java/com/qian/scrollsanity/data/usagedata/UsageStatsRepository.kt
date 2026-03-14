@@ -1,4 +1,4 @@
-package com.qian.scrollsanity.data
+package com.qian.scrollsanity.data.usagedata
 
 import android.app.AppOpsManager
 import android.app.usage.UsageEvents
@@ -11,36 +11,103 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.util.Log
-import com.qian.scrollsanity.domain.model.AppSession
+import com.qian.scrollsanity.data.TrackedAppId
+import com.qian.scrollsanity.data.TrackedAppMeta
+import com.qian.scrollsanity.data.TrackedApps
+import com.qian.scrollsanity.domain.model.usagedata.AppSession
+import com.qian.scrollsanity.domain.repo.LocalUsageRepo
 import java.util.Calendar
+import kotlin.collections.iterator
 import kotlin.math.max
 
-
 /**
- * UsageStatsRepository (per-app toggle ready)
- * 跟 Android 的 UsageStatsManager 对接
- * 检查 Usage Access permission
- * 查询 UsageEvents
- * 计算 app 使用时长
- * 返回今天、过去几天的 usage 数据
- * Android usage 数据采集器
- * 这也是我们接下来要加 session 逻辑的核心地方
+ * Repository for reading local app-usage data from Android UsageStats / UsageEvents.
  *
+ * Responsibilities:
+ * 1. Implement [LocalUsageRepo] for the domain layer.
+ * 2. Reconstruct recent tracked-app sessions from UsageEvents.
+ * 3. Provide daily usage summaries for UI/statistics screens.
+ * 4. Provide Android permission and settings helpers.
  *
- * - Reliable permission check via AppOpsManager
- * - Accurate-ish usage via UsageEvents foreground/background reconstruction
- * - Filters to ENABLED tracked apps only (from Preferences)
- * - Returns stable UI entries (0m entries) for enabled apps
- * - Aggregates variants (multiple packages) into a single tracked app if needed
+ * Notes:
+ * - Session-based intervention logic should use [getRecentSessions].
+ * - Daily total functions are kept because other parts of the app may still use them.
+ * - This repository only returns data for tracked/enabled apps.
  */
-
-
-class UsageStatsRepository(private val context: Context) {
+class UsageStatsRepository(
+    private val context: Context
+) : LocalUsageRepo {
 
     private val usageStatsManager: UsageStatsManager =
         context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
     private val packageManager: PackageManager = context.packageManager
+
+    // =========================================================
+    // LocalUsageRepo implementation
+    // =========================================================
+
+    /**
+     * Returns total tracked-app usage minutes for today.
+     *
+     * This is a daily aggregate helper required by [LocalUsageRepo].
+     * It is not the new session-based trigger signal, but may still be used by
+     * UI or compatibility paths.
+     */
+    override suspend fun getTodayTotalMinutes(enabled: Set<TrackedAppId>): Int {
+        return getTodayUsageStats(enabled).sumOf { it.usageTimeMinutes }
+    }
+
+    /**
+     * Returns daily total usage minutes for the previous 7 days, excluding today.
+     *
+     * Current behavior:
+     * - query 8 day buckets in total
+     * - drop index 0 (today)
+     * - keep the next 7 entries
+     */
+    override suspend fun getLast7DaysTotalMinutes(enabled: Set<TrackedAppId>): List<Int> {
+        return getUsageStatsForDays(days = 8, enabled = enabled)
+            .drop(1)
+            .take(7)
+            .map { it.totalMinutes }
+    }
+
+    /**
+     * Returns reconstructed tracked-app sessions within the last [days] days.
+     *
+     * This is the key entry point for the new session-based intervention logic.
+     * Each returned [AppSession] represents one continuous foreground session
+     * for a tracked app.
+     */
+    override suspend fun getRecentSessions(
+        enabledPackages: Set<String>,
+        days: Int
+    ): List<AppSession> {
+        return getSessionsForDays(
+            days = days,
+            enabledPackages = enabledPackages
+        )
+    }
+
+    // =========================================================
+    // Session reconstruction
+    // =========================================================
+
+    /**
+     * Reconstructs tracked-app sessions from UsageEvents over the past [days] days.
+     *
+     * A session starts when a tracked app moves to foreground/resumed,
+     * and ends when it moves to background/paused/stopped, or when the screen
+     * becomes non-interactive / keyguard is shown.
+     *
+     * Rules:
+     * - only tracked apps inside [enabledPackages] are included
+     * - sessions shorter than 1 minute are discarded
+     * - any unfinished session at the end of the query window is closed at [end]
+     *
+     * This function is the underlying data source used by [getRecentSessions].
+     */
     fun getSessionsForDays(
         days: Int,
         enabledPackages: Set<String>
@@ -55,10 +122,19 @@ class UsageStatsRepository(private val context: Context) {
         }
         if (enabledMetas.isEmpty()) return emptyList()
 
-        // Exact mapping: package -> tracked app id
+        // Exact mapping from package name to tracked app id.
         val exactPkgToId: Map<String, TrackedAppId> =
-            enabledMetas.flatMap { meta -> meta.exactPackages.map { pkg -> pkg to meta.id } }.toMap()
+            enabledMetas
+                .flatMap { meta -> meta.exactPackages.map { pkg -> pkg to meta.id } }
+                .toMap()
 
+        /**
+         * Resolves a raw package name to a tracked app id.
+         *
+         * Resolution order:
+         * 1. exact package match
+         * 2. fallback substring match
+         */
         fun resolveTrackedId(packageName: String): TrackedAppId? {
             exactPkgToId[packageName]?.let { return it }
 
@@ -79,6 +155,12 @@ class UsageStatsRepository(private val context: Context) {
         var currentPkg: String? = null
         var currentTrackedId: TrackedAppId? = null
         var currentStart: Long? = null
+
+        /**
+         * Closes the currently open tracked-app session at time [at].
+         *
+         * Sessions shorter than 60 seconds are ignored.
+         */
         fun closeCurrent(at: Long) {
             val pkg = currentPkg
             val trackedId = currentTrackedId
@@ -87,7 +169,6 @@ class UsageStatsRepository(private val context: Context) {
             if (pkg != null && trackedId != null && startTime != null) {
                 val durationMillis = (at - startTime).coerceAtLeast(0L)
 
-                // Filter out very short sessions (< 60 seconds)
                 if (durationMillis >= 60_000L) {
                     val durationMinutes = (durationMillis / 60_000L).toInt()
 
@@ -102,7 +183,6 @@ class UsageStatsRepository(private val context: Context) {
                     )
                 }
             }
-
 
             currentPkg = null
             currentTrackedId = null
@@ -120,9 +200,8 @@ class UsageStatsRepository(private val context: Context) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
                     val trackedId = resolveTrackedId(pkg)
 
-                    // Only record tracked apps
                     if (trackedId != null) {
-                        // If another tracked app was active, close it first
+                        // If another tracked app session is already open, close it first.
                         if (currentPkg != null && currentPkg != pkg) {
                             closeCurrent(t)
                         }
@@ -148,121 +227,22 @@ class UsageStatsRepository(private val context: Context) {
             }
         }
 
-        // Close any unfinished tracked app session at the end of the window
+        // Close any tracked app session still open at the end of the query window.
         if (currentPkg != null && currentStart != null) {
             closeCurrent(end)
         }
 
         return sessions
     }
-//    fun getSessionsForDays(
-//        days: Int,
-//        enabled: Set<TrackedAppId>
-//    ): List<AppSession> {
-//
-//        val start = startOfDayMillis(daysAgo = days - 1)
-//        val end = System.currentTimeMillis()
-//
-//        val enabledMetas = TrackedApps.all.filter { it.id in enabled }
-//
-//        val exactPkgToId: Map<String, TrackedAppId> =
-//            enabledMetas.flatMap { meta -> meta.exactPackages.map { pkg -> pkg to meta.id } }.toMap()
-//
-//        fun resolveTrackedId(packageName: String): TrackedAppId? {
-//            exactPkgToId[packageName]?.let { return it }
-//            val lower = packageName.lowercase()
-//            for (meta in enabledMetas) {
-//                if (meta.fallbackContains.any { lower.contains(it) }) return meta.id
-//            }
-//            return null
-//        }
-//
-//        val events: UsageEvents = usageStatsManager.queryEvents(start, end)
-//        val event = UsageEvents.Event()
-//
-//        val sessions = mutableListOf<AppSession>()
-//
-//        var currentPkg: String? = null
-//        var currentStart: Long? = null
-//        var currentTrackedId: TrackedAppId? = null
-//
-//        fun closeCurrent(at: Long) {
-//            val pkg = currentPkg
-//            val startTime = currentStart
-//            val trackedId = currentTrackedId
-//
-//            if (pkg != null && startTime != null && trackedId != null) {
-//
-//                val durationMillis = (at - startTime).coerceAtLeast(0L)
-//                val durationMinutes = (durationMillis / 60_000L).toInt()
-//
-//                if (durationMinutes > 0) {
-//                    sessions.add(
-//                        AppSession(
-//                            trackedAppId = trackedId,
-//                            packageName = pkg,
-//                            startMillis = startTime,
-//                            endMillis = at,
-//                            durationMinutes = durationMinutes
-//                        )
-//                    )
-//                }
-//            }
-//
-//            currentPkg = null
-//            currentStart = null
-//            currentTrackedId = null
-//        }
-//
-//        while (events.hasNextEvent()) {
-//            events.getNextEvent(event)
-//
-//            val pkg = event.packageName ?: continue
-//            val t = event.timeStamp
-//
-//            when (event.eventType) {
-//
-//                UsageEvents.Event.MOVE_TO_FOREGROUND,
-//                UsageEvents.Event.ACTIVITY_RESUMED -> {
-//
-//                    val trackedId = resolveTrackedId(pkg)
-//
-//                    if (trackedId != null) {
-//
-//                        if (currentPkg != null && currentPkg != pkg) {
-//                            closeCurrent(t)
-//                        }
-//
-//                        currentPkg = pkg
-//                        currentStart = max(t, start)
-//                        currentTrackedId = trackedId
-//                    }
-//                }
-//
-//                UsageEvents.Event.MOVE_TO_BACKGROUND,
-//                UsageEvents.Event.ACTIVITY_PAUSED,
-//                UsageEvents.Event.ACTIVITY_STOPPED -> {
-//
-//                    if (currentPkg == pkg && currentStart != null) {
-//                        closeCurrent(t)
-//                    }
-//                }
-//
-//                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
-//                UsageEvents.Event.KEYGUARD_SHOWN -> {
-//                    closeCurrent(t)
-//                }
-//            }
-//        }
-//
-//        if (currentPkg != null && currentStart != null) {
-//            closeCurrent(end)
-//        }
-//
-//        return sessions
-//    }
+
+    // =========================================================
+    // Permission and settings helpers
+    // =========================================================
+
     /**
-     * Reliable check for Usage Access permission.
+     * Returns true if the app has Usage Access permission.
+     *
+     * This uses AppOpsManager, which is more reliable than checking UI state.
      */
     fun hasUsagePermission(): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -284,7 +264,7 @@ class UsageStatsRepository(private val context: Context) {
     }
 
     /**
-     * Open system settings to grant usage access permission.
+     * Opens the Android Usage Access settings screen.
      */
     fun openUsageAccessSettings() {
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
@@ -297,7 +277,10 @@ class UsageStatsRepository(private val context: Context) {
     }
 
     /**
-     * Check if accessibility service is enabled for this app.
+     * Returns true if this app's accessibility service is enabled.
+     *
+     * This checks both the full component name and shorthand format because
+     * Android may store either representation.
      */
     fun hasAccessibilityPermission(): Boolean {
         val accessibilityEnabled = Settings.Secure.getInt(
@@ -306,14 +289,16 @@ class UsageStatsRepository(private val context: Context) {
             0
         )
         Log.d("UsageStatsRepo", "Accessibility enabled setting: $accessibilityEnabled")
+
         if (accessibilityEnabled != 1) {
             Log.d("UsageStatsRepo", "Accessibility is globally disabled")
             return false
         }
 
-        // Android registers with full class name, not shorthand
-        val serviceFullName = "${context.packageName}/${context.packageName}.blocker.AccessibilityMonitorService"
-        val serviceShorthand = "${context.packageName}/.blocker.AccessibilityMonitorService"
+        val serviceFullName =
+            "${context.packageName}/${context.packageName}.blocker.AccessibilityMonitorService"
+        val serviceShorthand =
+            "${context.packageName}/.blocker.AccessibilityMonitorService"
 
         val enabledServices = Settings.Secure.getString(
             context.contentResolver,
@@ -328,14 +313,15 @@ class UsageStatsRepository(private val context: Context) {
             return false
         }
 
-        // Check both formats since Android may use either
-        val result = enabledServices.contains(serviceFullName) || enabledServices.contains(serviceShorthand)
+        val result = enabledServices.contains(serviceFullName) ||
+                enabledServices.contains(serviceShorthand)
+
         Log.d("UsageStatsRepo", "Service found: $result")
         return result
     }
 
     /**
-     * Open accessibility settings.
+     * Opens the Android Accessibility settings screen.
      */
     fun openAccessibilitySettings() {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
@@ -344,20 +330,36 @@ class UsageStatsRepository(private val context: Context) {
         context.startActivity(intent)
     }
 
+    // =========================================================
+    // Daily usage summary helpers
+    // =========================================================
+
     /**
-     * Get today's usage statistics (from local midnight to now).
-     * Returns ONLY enabled tracked apps.
+     * Returns per-app usage statistics for today only.
+     *
+     * This is mainly useful for UI display and daily summaries.
+     * It is not the primary signal for the new session-based intervention logic.
      */
-    fun getTodayUsageStats(enabled: Set<TrackedAppId> = TrackedApps.allIds): List<AppUsageInfo> {
+    fun getTodayUsageStats(
+        enabled: Set<TrackedAppId> = TrackedApps.allIds
+    ): List<AppUsageInfo> {
         val start = startOfDayMillis(daysAgo = 0)
         val end = System.currentTimeMillis()
         return getUsageStats(start, end, enabled)
     }
 
     /**
-     * Get usage statistics for the past N days.
-     * Returns one DailyUsageInfo per day (0 = today, 1 = yesterday, ...).
-     * Each day contains ONLY enabled tracked apps.
+     * Returns daily usage summaries for the last [days] day buckets.
+     *
+     * Output ordering:
+     * - index 0 = today
+     * - index 1 = yesterday
+     * - ...
+     *
+     * Each [DailyUsageInfo] contains:
+     * - the day start timestamp
+     * - total usage minutes for that day
+     * - per-app usage details
      */
     fun getUsageStatsForDays(
         days: Int,
@@ -386,15 +388,15 @@ class UsageStatsRepository(private val context: Context) {
     }
 
     /**
-     * Accurate usage computation for a time range using UsageEvents.
+     * Computes per-app usage statistics over a given time range.
      *
-     * Robust approach:
-     * - Track a single "current foreground app" to reduce overcounting
-     * - Close session on screen non-interactive / keyguard shown (if present)
+     * This reconstructs foreground usage from UsageEvents and then aggregates
+     * matching packages into tracked apps.
      *
-     * Output:
-     * - Only enabled tracked apps
-     * - Seed with 0m entries for enabled apps for stable UI
+     * Output characteristics:
+     * - only enabled tracked apps are included
+     * - apps are seeded with 0 minutes for stable UI rendering
+     * - package variants can be aggregated into one tracked app
      */
     private fun getUsageStats(
         startTime: Long,
@@ -404,19 +406,21 @@ class UsageStatsRepository(private val context: Context) {
         if (endTime <= startTime) return emptyList()
 
         val enabledMetas = TrackedApps.all.filter { it.id in enabled }
-
-        // If user somehow disables everything, return empty (PreferencesManager can prevent this)
         if (enabledMetas.isEmpty()) return emptyList()
 
-        // Exact mapping for enabled apps: package -> tracked id
         val exactPkgToId: Map<String, TrackedAppId> =
-            enabledMetas.flatMap { meta -> meta.exactPackages.map { pkg -> pkg to meta.id } }.toMap()
+            enabledMetas
+                .flatMap { meta -> meta.exactPackages.map { pkg -> pkg to meta.id } }
+                .toMap()
 
         fun resolveTrackedId(packageName: String): TrackedAppId? {
             exactPkgToId[packageName]?.let { return it }
+
             val lower = packageName.lowercase()
             for (meta in enabledMetas) {
-                if (meta.fallbackContains.any { lower.contains(it) }) return meta.id
+                if (meta.fallbackContains.any { lower.contains(it) }) {
+                    return meta.id
+                }
             }
             return null
         }
@@ -424,8 +428,8 @@ class UsageStatsRepository(private val context: Context) {
         val events: UsageEvents = usageStatsManager.queryEvents(startTime, endTime)
         val event = UsageEvents.Event()
 
-        val totalMs = mutableMapOf<String, Long>()   // package -> total foreground ms
-        val lastUsed = mutableMapOf<String, Long>()  // package -> last seen timestamp
+        val totalMs = mutableMapOf<String, Long>()
+        val lastUsed = mutableMapOf<String, Long>()
 
         var currentPkg: String? = null
         var currentStart: Long? = null
@@ -455,7 +459,6 @@ class UsageStatsRepository(private val context: Context) {
             when (event.eventType) {
                 UsageEvents.Event.MOVE_TO_FOREGROUND,
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    // Close previous if a different app comes to foreground
                     if (currentPkg != null && currentStart != null && currentPkg != pkg) {
                         closeCurrent(t)
                     }
@@ -473,7 +476,6 @@ class UsageStatsRepository(private val context: Context) {
                     lastUsed[pkg] = max(lastUsed[pkg] ?: 0L, t)
                 }
 
-                // If your minSdk complains about these constants, delete these two cases.
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE,
                 UsageEvents.Event.KEYGUARD_SHOWN -> {
                     closeCurrent(t)
@@ -481,18 +483,17 @@ class UsageStatsRepository(private val context: Context) {
             }
         }
 
-        // Close any app still in foreground at endTime
         if (currentPkg != null && currentStart != null) {
             closeCurrent(endTime)
         }
 
-        // Seed output with enabled apps at 0 minutes (stable UI)
-        // Only include apps that are actually installed on the device
         val installedEnabledMetas = enabledMetas.filter { isTrackedAppInstalled(it) }
 
         val resultsById: MutableMap<TrackedAppId, AppUsageInfo> =
             installedEnabledMetas.associate { meta ->
-                val representativePkg = meta.exactPackages.firstOrNull() ?: meta.displayName.lowercase()
+                val representativePkg =
+                    meta.exactPackages.firstOrNull() ?: meta.displayName.lowercase()
+
                 meta.id to AppUsageInfo(
                     packageName = representativePkg,
                     appName = meta.displayName,
@@ -502,7 +503,6 @@ class UsageStatsRepository(private val context: Context) {
                 )
             }.toMutableMap()
 
-        // Aggregate matching packages into the tracked app
         for ((pkg, ms) in totalMs) {
             if (ms <= 0L) continue
             if (!isAppLaunchable(pkg)) continue
@@ -518,8 +518,11 @@ class UsageStatsRepository(private val context: Context) {
                 resultsById[id] = existing.copy(
                     usageTimeMinutes = existing.usageTimeMinutes + minutes,
                     lastTimeUsed = max(existing.lastTimeUsed, usedAt),
-                    // prefer a real package name if we had a placeholder
-                    packageName = if (existing.packageName.startsWith("com.")) existing.packageName else pkg,
+                    packageName = if (existing.packageName.startsWith("com.")) {
+                        existing.packageName
+                    } else {
+                        pkg
+                    },
                     appName = meta.displayName,
                     category = AppCategory.SOCIAL
                 )
@@ -534,14 +537,17 @@ class UsageStatsRepository(private val context: Context) {
             }
         }
 
-        // Return installed enabled apps in stable order, sorted by usage descending for UI
         return installedEnabledMetas
             .mapNotNull { resultsById[it.id] }
             .sortedByDescending { it.usageTimeMinutes }
     }
 
+    // =========================================================
+    // Internal helpers
+    // =========================================================
+
     /**
-     * Helper to check if an app has a launcher activity (is a "real" user app).
+     * Returns true if the package appears to be a launchable user-facing app.
      */
     private fun isAppLaunchable(packageName: String): Boolean {
         return try {
@@ -556,7 +562,7 @@ class UsageStatsRepository(private val context: Context) {
     }
 
     /**
-     * Helper to check if an app is installed on the device.
+     * Returns true if the package is installed on this device.
      */
     private fun isAppInstalled(packageName: String): Boolean {
         return try {
@@ -568,15 +574,18 @@ class UsageStatsRepository(private val context: Context) {
     }
 
     /**
-     * Helper to check if any of the tracked app's packages are installed.
+     * Returns true if any package belonging to this tracked app is installed.
      */
     private fun isTrackedAppInstalled(meta: TrackedAppMeta): Boolean {
         return meta.exactPackages.any { isAppInstalled(it) }
     }
 
     /**
-     * Calendar-based day boundaries.
-     * daysAgo=0 => today, 1 => yesterday, etc.
+     * Returns the local start-of-day timestamp for [daysAgo].
+     *
+     * Examples:
+     * - 0 = today at 00:00:00.000
+     * - 1 = yesterday at 00:00:00.000
      */
     private fun startOfDayMillis(daysAgo: Int): Long {
         val cal = Calendar.getInstance()
@@ -588,6 +597,9 @@ class UsageStatsRepository(private val context: Context) {
         return cal.timeInMillis
     }
 
+    /**
+     * Returns the local end-of-day timestamp for [daysAgo].
+     */
     private fun endOfDayMillis(daysAgo: Int): Long {
         val cal = Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR, -daysAgo)
@@ -597,68 +609,10 @@ class UsageStatsRepository(private val context: Context) {
         cal.set(Calendar.MILLISECOND, 999)
         return cal.timeInMillis
     }
-
-    /**
-     * Get usage in minutes for a specific package today.
-     */
-    suspend fun getUsageMinutesTodayForPackage(packageName: String): Int {
-        val start = startOfDayMillis(daysAgo = 0)
-        val end = System.currentTimeMillis()
-
-        if (!hasUsagePermission()) return 0
-
-        val events: UsageEvents = usageStatsManager.queryEvents(start, end)
-        val event = UsageEvents.Event()
-
-        var totalMs = 0L
-        var currentStart: Long? = null
-
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-
-            if (event.packageName != packageName) continue
-
-            val t = event.timeStamp
-
-            when (event.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND,
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    currentStart = max(t, start)
-                }
-
-                UsageEvents.Event.MOVE_TO_BACKGROUND,
-                UsageEvents.Event.ACTIVITY_PAUSED,
-                UsageEvents.Event.ACTIVITY_STOPPED -> {
-                    if (currentStart != null) {
-                        val delta = (t - currentStart).coerceAtLeast(0L)
-                        totalMs += delta
-                        currentStart = null
-                    }
-                }
-
-                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
-                UsageEvents.Event.KEYGUARD_SHOWN -> {
-                    if (currentStart != null) {
-                        val delta = (t - currentStart).coerceAtLeast(0L)
-                        totalMs += delta
-                        currentStart = null
-                    }
-                }
-            }
-        }
-
-        // If app is still in foreground at end time
-        if (currentStart != null) {
-            val delta = (end - currentStart).coerceAtLeast(0L)
-            totalMs += delta
-        }
-
-        return (totalMs / 60_000L).toInt()
-    }
 }
 
 /**
- * Data class representing usage info for a single app
+ * Per-app usage summary used by UI and daily statistics screens.
  */
 data class AppUsageInfo(
     val packageName: String,
@@ -669,7 +623,7 @@ data class AppUsageInfo(
 )
 
 /**
- * Data class representing daily usage summary
+ * Daily usage summary containing total minutes and per-app breakdown for one day.
  */
 data class DailyUsageInfo(
     val date: Long,
@@ -678,7 +632,7 @@ data class DailyUsageInfo(
 )
 
 /**
- * App categories for filtering
+ * Simple app category enum used by UI filtering/grouping.
  */
 enum class AppCategory {
     SOCIAL,

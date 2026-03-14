@@ -8,6 +8,7 @@ import com.google.firebase.firestore.SetOptions
 import com.qian.scrollsanity.domain.model.GoalItem
 import com.qian.scrollsanity.domain.model.UserPreferences
 import com.qian.scrollsanity.domain.model.UserProfile
+import com.qian.scrollsanity.domain.model.usagedata.AppUsageData
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -511,7 +512,7 @@ class FirestoreRepository {
 
     suspend fun getAllAppUsageToday(
         userId: String
-    ): Result<List<com.qian.scrollsanity.domain.model.AppUsageData>> = try {
+    ): Result<List<AppUsageData>> = try {
 
         val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
             .format(java.util.Date())
@@ -525,7 +526,7 @@ class FirestoreRepository {
 
         Result.success(
             docs.documents.mapNotNull {
-                it.toObject(com.qian.scrollsanity.domain.model.AppUsageData::class.java)
+                it.toObject(AppUsageData::class.java)
             }
         )
 

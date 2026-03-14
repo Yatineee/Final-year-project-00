@@ -1,31 +1,27 @@
 package com.qian.scrollsanity.domain.usecase
 
+import android.util.Log
 import com.qian.scrollsanity.data.TrackedAppId
+import com.qian.scrollsanity.data.TrackedApps
 import com.qian.scrollsanity.domain.policy.DeviationInterventionPolicy
-import com.qian.scrollsanity.domain.policy.DeviationCalculator
+import com.qian.scrollsanity.domain.policy.SessionBaselineCalculator
+import com.qian.scrollsanity.domain.policy.SessionDeviationCalculator
+import com.qian.scrollsanity.domain.repo.LocalUsageRepo
 import com.qian.scrollsanity.domain.trigger.CooldownPolicy
 import com.qian.scrollsanity.domain.trigger.InterventionSessionState
 
 sealed class TriggerResult {
     object None : TriggerResult()
-    object AskUsageType : TriggerResult()                 // z >= 2
-    data class TriggerIntervention(val z: Double) : TriggerResult() // 达到强度阈值
+    object AskUsageType : TriggerResult()
+    data class TriggerIntervention(val z: Double) : TriggerResult()
 }
 
-/** 只负责提供强度：LOW|MEDIUM|HIGH */
 interface IntensityProvider {
     suspend fun getIntensity(): String
 }
 
-/** 提供当前用户启用的 tracked apps ids */
 interface EnabledTrackedProvider {
     suspend fun getEnabledTrackedIds(): Set<TrackedAppId>
-}
-
-/** 本地 usage 提供者：今日 + baseline 7天（建议不含今天） */
-interface LocalUsageProvider {
-    suspend fun getTodayTotalMinutes(enabled: Set<TrackedAppId>): Int
-    suspend fun getBaseline7DaysMinutes(enabled: Set<TrackedAppId>): List<Int>
 }
 
 class MaybeRunInterventionCheckUseCase(
@@ -33,48 +29,89 @@ class MaybeRunInterventionCheckUseCase(
     private val deviationPolicy: DeviationInterventionPolicy,
     private val intensityProvider: IntensityProvider,
     private val enabledProvider: EnabledTrackedProvider,
-    private val usageProvider: LocalUsageProvider
+    private val localUsageRepo: LocalUsageRepo
 ) {
     suspend fun run(
         nowMs: Long,
-        state: InterventionSessionState
+        state: InterventionSessionState,
+        currentSessionMinutes: Int
     ): Pair<InterventionSessionState, TriggerResult> {
 
-        if (!state.inBlockedSession) return state to TriggerResult.None
+        if (!state.inBlockedSession) {
+            Log.d("InterventionCheck", "Skip: not in blocked session")
+            return state to TriggerResult.None
+        }
 
         val intensity = intensityProvider.getIntensity().trim().uppercase()
         val cooldown = cooldownPolicy.cooldownMs(intensity)
 
         val due = (nowMs - state.lastCheckAtMs) >= cooldown
-        if (!due) return state to TriggerResult.None
+        if (!due) {
+            Log.d(
+                "InterventionCheck",
+                "Skip: cooldown not due, nowMs=$nowMs, lastCheckAtMs=${state.lastCheckAtMs}, cooldown=$cooldown"
+            )
+            return state to TriggerResult.None
+        }
 
-        val enabled = enabledProvider.getEnabledTrackedIds()
+        val enabledIds = enabledProvider.getEnabledTrackedIds()
 
-        // 1) 今日 minutes + baseline 7天
-        val todayMinutes = usageProvider.getTodayTotalMinutes(enabled)
-        val baseline7 = usageProvider.getBaseline7DaysMinutes(enabled)
+        val enabledPackages: Set<String> =
+            enabledIds.flatMap { id -> TrackedApps.metaFor(id).exactPackages }.toSet()
 
-        // 2) z
-        val z = DeviationCalculator.computeZ(
-            todayMinutes = todayMinutes,
-            baselineDaysMinutes = baseline7,
-            sigmaMin = 1.0
+        val sessions = localUsageRepo.getRecentSessions(
+            enabledPackages = enabledPackages,
+            days = 7
+        ).filter { it.durationMinutes >= 1 }
+
+        Log.d(
+            "InterventionCheck",
+            "enabledPackages=$enabledPackages, sessions=${sessions.size}, currentSessionMinutes=$currentSessionMinutes"
         )
-
-        // 3) policy
-        deviationPolicy.resetIfRecovered(z)
-        val eval = deviationPolicy.evaluate(z, intensity.lowercase())
 
         val newState = state.copy(lastCheckAtMs = nowMs)
 
+        if (sessions.isEmpty()) {
+            Log.d("InterventionCheck", "No recent sessions found, skip trigger")
+            return newState to TriggerResult.None
+        }
+
+        val baseline = SessionBaselineCalculator.compute(sessions)
+
+        val z = SessionDeviationCalculator.computeZ(
+            currentSessionMinutes = currentSessionMinutes,
+            baseline = baseline,
+            sigmaMinutes = 1.0
+        )
+
+        Log.d(
+            "InterventionCheck",
+            "currentSessionMinutes=$currentSessionMinutes, sessions=${sessions.size}, median=${baseline.medianMinutes}, mad=${baseline.madMinutes}, sampleCount=${baseline.sampleCount}, z=$z, intensity=$intensity"
+        )
+
+        deviationPolicy.resetIfRecovered(z)
+        val eval = deviationPolicy.evaluate(z, intensity.lowercase())
+
+        Log.d(
+            "InterventionCheck",
+            "eval: shouldAskUsageCheck=${eval.shouldAskUsageCheck}, shouldTriggerIntervention=${eval.shouldTriggerIntervention}, askedUsageTypeThisSession=${state.askedUsageTypeThisSession}"
+        )
+
         return when {
-            eval.shouldAskUsageCheck && !state.askedUsageTypeThisSession ->
+            eval.shouldAskUsageCheck && !state.askedUsageTypeThisSession -> {
+                Log.d("InterventionCheck", "Result: AskUsageType")
                 newState.copy(askedUsageTypeThisSession = true) to TriggerResult.AskUsageType
+            }
 
-            eval.shouldTriggerIntervention ->
+            eval.shouldTriggerIntervention -> {
+                Log.d("InterventionCheck", "Result: TriggerIntervention(z=$z)")
                 newState to TriggerResult.TriggerIntervention(z)
+            }
 
-            else -> newState to TriggerResult.None
+            else -> {
+                Log.d("InterventionCheck", "Result: None")
+                newState to TriggerResult.None
+            }
         }
     }
 }

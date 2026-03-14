@@ -1,6 +1,6 @@
 package com.qian.scrollsanity.domain.policy
 
-import com.qian.scrollsanity.domain.model.AppSession
+import com.qian.scrollsanity.domain.model.usagedata.AppSession
 import com.qian.scrollsanity.domain.model.SessionBaselineStats
 import kotlin.math.abs
 
