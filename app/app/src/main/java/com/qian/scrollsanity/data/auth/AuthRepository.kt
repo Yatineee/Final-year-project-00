@@ -31,7 +31,9 @@ class AuthRepository {
             )
 
             // 2) default preferences placeholder
-            val defaultPreferences = UserPreferences(preferStyle = "gentle")
+            val defaultPreferences = UserPreferences(
+                toneStyle = "gentle"
+            )
             firestoreRepo.syncPreferences(firebaseUser.uid, defaultPreferences)
 
             Result.success(firebaseUser.toUser())
@@ -39,31 +41,6 @@ class AuthRepository {
             Result.failure(e)
         }
     }
-
-//    suspend fun registerWithEmail(email: String, password: String): Result<User> {
-//        return try {
-//            val authResult = firebaseAuth.createUserWithEmailAndPassword(email, password).await()
-//            val firebaseUser = authResult.user ?: return Result.failure(Exception("Failed to create user"))
-//            if (firebaseUser != null) {
-//                // Create user profile in Firestore
-//                firestoreRepo.createUserProfile(
-//                    userId = firebaseUser.uid,
-//                    email = firebaseUser.email ?: email,
-//                    displayName = firebaseUser.displayName
-//                )
-//
-//                // Initialize default preferences
-//                val defaultPreferences = UserPreferences()
-//                firestoreRepo.syncPreferences(firebaseUser.uid, defaultPreferences)
-//
-//                Result.success(firebaseUser.toUser())
-//            } else {
-//                Result.failure(Exception("Failed to create user"))
-//            }
-//        } catch (e: Exception) {
-//            Result.failure(e)
-//        }
-//    }
 
     /**
      * Login with email and password

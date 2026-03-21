@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -48,6 +49,10 @@ class PreferencesManager(private val context: Context) {
         val TONE_STYLE = stringPreferencesKey("tone_style") // "gentle" | "humorous" | "direct"
         val RECENT_GOAL_CONTEXT = stringPreferencesKey("recent_goal_context")
         val RECENT_INTEREST_CONTEXT = stringPreferencesKey("recent_interest_context")
+
+        // ===== Local-only UI/settings convenience fields =====
+        val DAILY_GOAL_MINUTES = intPreferencesKey("daily_goal_minutes")
+        val INTERESTS = stringSetPreferencesKey("interests")
     }
 
     // =====================================================
@@ -81,7 +86,6 @@ class PreferencesManager(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.DARK_MODE] = mode
         }
-        // Dark mode is local UI preference; cloud sync optional.
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
@@ -91,6 +95,51 @@ class PreferencesManager(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.ONBOARDING_COMPLETED] = completed
         }
+    }
+
+    // =====================================================
+    // Daily Goal
+    // =====================================================
+
+    val dailyGoalMinutes: Flow<Int> = context.dataStore.data
+        .map { prefs -> prefs[PreferencesKeys.DAILY_GOAL_MINUTES] ?: 240 }
+
+    suspend fun setDailyGoalMinutes(minutes: Int) {
+        val safe = minutes.coerceAtLeast(1)
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.DAILY_GOAL_MINUTES] = safe
+        }
+    }
+
+    // =====================================================
+    // Interests
+    // =====================================================
+
+    val interests: Flow<List<String>> = context.dataStore.data
+        .map { prefs ->
+            (prefs[PreferencesKeys.INTERESTS] ?: emptySet())
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .sorted()
+        }
+
+    suspend fun setInterests(values: List<String>) {
+        val cleaned = values
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.INTERESTS] = cleaned
+
+            if (cleaned.isEmpty()) {
+                prefs.remove(PreferencesKeys.RECENT_INTEREST_CONTEXT)
+            } else {
+                prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT] = cleaned.sorted().joinToString(", ")
+            }
+        }
+
+        syncPreferencesToFirestore()
     }
 
     // Enabled tracked apps
