@@ -4,24 +4,27 @@ package com.qian.scrollsanity.data.onboarding
  * OnboardingInput
  *
  * Used when completing onboarding.
- * These values initialize user profile, preferences,
- * and optionally seed goals / interests collections.
+ * These values initialize:
+ * - user profile
+ * - user preferences
+ * - initial goals collection
+ * - initial interests collection
+ *
+ * Notes:
+ * - Goal and interest context should now be derived from the actual
+ *   goals/interests collections rather than stored as separate primary fields.
  */
 data class OnboardingInput(
 
-    // user profile
+    // User profile
     val nickname: String,
     val displayName: String? = null,
 
-    // preference configuration
+    // Preference configuration
     val toneStyle: String = "gentle",
     val interventionIntensity: String = "MEDIUM",
 
-    // context used for prompt generation
-    val recentGoalContext: String? = null,
-    val recentInterestContext: String? = null,
-
-    // initial lists created during onboarding
+    // Initial collections created during onboarding
     val goals: List<String> = emptyList(),
     val interests: List<String> = emptyList()
 )

@@ -39,8 +39,6 @@ class FirestoreRepository {
 
         private const val FIELD_INTENSITY = "interventionIntensity"
         private const val FIELD_TONE_STYLE = "toneStyle"
-        private const val FIELD_RECENT_GOAL = "recentGoalContext"
-        private const val FIELD_RECENT_INTEREST = "recentInterestContext"
         private const val FIELD_UPDATED_AT = "updatedAt"
     }
 
@@ -256,55 +254,9 @@ class FirestoreRepository {
         Result.failure(e)
     }
 
-    suspend fun updateRecentGoalContext(
-        userId: String,
-        recentGoalContext: String?
-    ): Result<Unit> = try {
-        firestore.collection(USERS_COLLECTION)
-            .document(userId)
-            .collection(DATA_SUBCOLLECTION)
-            .document(PREFERENCES_DOCUMENT)
-            .set(
-                mapOf(
-                    FIELD_RECENT_GOAL to recentGoalContext,
-                    FIELD_UPDATED_AT to System.currentTimeMillis()
-                ),
-                SetOptions.merge()
-            )
-            .await()
-
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Log.e(tag, "Failed to update recentGoalContext", e)
-        Result.failure(e)
-    }
-
-    suspend fun updateRecentInterestContext(
-        userId: String,
-        recentInterestContext: String?
-    ): Result<Unit> = try {
-        firestore.collection(USERS_COLLECTION)
-            .document(userId)
-            .collection(DATA_SUBCOLLECTION)
-            .document(PREFERENCES_DOCUMENT)
-            .set(
-                mapOf(
-                    FIELD_RECENT_INTEREST to recentInterestContext,
-                    FIELD_UPDATED_AT to System.currentTimeMillis()
-                ),
-                SetOptions.merge()
-            )
-            .await()
-
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Log.e(tag, "Failed to update recentInterestContext", e)
-        Result.failure(e)
-    }
-
     // =====================================================
     // ONBOARDING
-    // Atomic commit + seed goal + seed interests
+    // Atomic commit + seed goals + seed interests
     // =====================================================
 
     suspend fun completeOnboarding(
@@ -348,16 +300,6 @@ class FirestoreRepository {
         val tone = input.toneStyle.ifBlank { "gentle" }
         val intensity = input.interventionIntensity.ifBlank { "MEDIUM" }.uppercase()
 
-        val recentGoal = input.recentGoalContext
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: cleanedGoals.firstOrNull()
-
-        val recentInterest = input.recentInterestContext
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: cleanedInterests.takeIf { it.isNotEmpty() }?.joinToString(", ")
-
         val now = System.currentTimeMillis()
 
         firestore.runBatch { batch ->
@@ -375,8 +317,6 @@ class FirestoreRepository {
                 mapOf(
                     FIELD_INTENSITY to intensity,
                     FIELD_TONE_STYLE to tone,
-                    FIELD_RECENT_GOAL to recentGoal,
-                    FIELD_RECENT_INTEREST to recentInterest,
                     FIELD_UPDATED_AT to now
                 ),
                 SetOptions.merge()

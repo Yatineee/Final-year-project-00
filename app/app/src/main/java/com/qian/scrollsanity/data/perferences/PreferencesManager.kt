@@ -28,36 +28,17 @@ class PreferencesManager(private val context: Context) {
     private val firebaseAuth = FirebaseAuth.getInstance()
 
     private object PreferencesKeys {
-        // ===== Existing local settings =====
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val FOCUS_STRICT_MODE = booleanPreferencesKey("focus_strict_mode")
         val DARK_MODE = stringPreferencesKey("dark_mode")
-        val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
-
-        // Enabled tracked apps (store enum names)
         val ENABLED_TRACKED_APPS = stringSetPreferencesKey("enabled_tracked_apps")
-
-        // Focus session state
         val IS_FOCUS_ACTIVE = booleanPreferencesKey("is_focus_active")
         val FOCUS_END_TIME = longPreferencesKey("focus_end_time")
-
-        // Auth state
         val IS_USER_LOGGED_IN = booleanPreferencesKey("is_user_logged_in")
-
-        // ===== Intervention / language generation preferences =====
-        val INTERVENTION_INTENSITY = stringPreferencesKey("intervention_intensity") // "LOW"|"MEDIUM"|"HIGH"
-        val TONE_STYLE = stringPreferencesKey("tone_style") // "gentle" | "humorous" | "direct"
-        val RECENT_GOAL_CONTEXT = stringPreferencesKey("recent_goal_context")
-        val RECENT_INTEREST_CONTEXT = stringPreferencesKey("recent_interest_context")
-
-        // ===== Local-only UI/settings convenience fields =====
+        val INTERVENTION_INTENSITY = stringPreferencesKey("intervention_intensity")
+        val TONE_STYLE = stringPreferencesKey("tone_style")
         val DAILY_GOAL_MINUTES = intPreferencesKey("daily_goal_minutes")
-        val INTERESTS = stringSetPreferencesKey("interests")
     }
-
-    // =====================================================
-    // Existing Local Settings
-    // =====================================================
 
     val notificationsEnabled: Flow<Boolean> = context.dataStore.data
         .map { prefs -> prefs[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true }
@@ -69,38 +50,6 @@ class PreferencesManager(private val context: Context) {
         syncPreferencesToFirestore()
     }
 
-    val focusStrictMode: Flow<Boolean> = context.dataStore.data
-        .map { prefs -> prefs[PreferencesKeys.FOCUS_STRICT_MODE] ?: false }
-
-    suspend fun setFocusStrictMode(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.FOCUS_STRICT_MODE] = enabled
-        }
-        syncPreferencesToFirestore()
-    }
-
-    val darkMode: Flow<String> = context.dataStore.data
-        .map { prefs -> prefs[PreferencesKeys.DARK_MODE] ?: "system" }
-
-    suspend fun setDarkMode(mode: String) {
-        context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.DARK_MODE] = mode
-        }
-    }
-
-    val onboardingCompleted: Flow<Boolean> = context.dataStore.data
-        .map { prefs -> prefs[PreferencesKeys.ONBOARDING_COMPLETED] ?: false }
-
-    suspend fun setOnboardingCompleted(completed: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.ONBOARDING_COMPLETED] = completed
-        }
-    }
-
-    // =====================================================
-    // Daily Goal
-    // =====================================================
-
     val dailyGoalMinutes: Flow<Int> = context.dataStore.data
         .map { prefs -> prefs[PreferencesKeys.DAILY_GOAL_MINUTES] ?: 240 }
 
@@ -109,40 +58,9 @@ class PreferencesManager(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.DAILY_GOAL_MINUTES] = safe
         }
-    }
-
-    // =====================================================
-    // Interests
-    // =====================================================
-
-    val interests: Flow<List<String>> = context.dataStore.data
-        .map { prefs ->
-            (prefs[PreferencesKeys.INTERESTS] ?: emptySet())
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .sorted()
-        }
-
-    suspend fun setInterests(values: List<String>) {
-        val cleaned = values
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .toSet()
-
-        context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.INTERESTS] = cleaned
-
-            if (cleaned.isEmpty()) {
-                prefs.remove(PreferencesKeys.RECENT_INTEREST_CONTEXT)
-            } else {
-                prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT] = cleaned.sorted().joinToString(", ")
-            }
-        }
-
         syncPreferencesToFirestore()
     }
 
-    // Enabled tracked apps
     val enabledTrackedApps: Flow<Set<TrackedAppId>> = context.dataStore.data
         .map { prefs ->
             val raw = prefs[PreferencesKeys.ENABLED_TRACKED_APPS]
@@ -180,10 +98,6 @@ class PreferencesManager(private val context: Context) {
         syncPreferencesToFirestore()
     }
 
-    // =====================================================
-    // Focus Session State
-    // =====================================================
-
     val isFocusActive: Flow<Boolean> = context.dataStore.data
         .map { prefs ->
             val isActive = prefs[PreferencesKeys.IS_FOCUS_ACTIVE] ?: false
@@ -213,10 +127,6 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
-    // =====================================================
-    // Auth State
-    // =====================================================
-
     val isUserLoggedIn: Flow<Boolean> = context.dataStore.data
         .map { prefs -> prefs[PreferencesKeys.IS_USER_LOGGED_IN] ?: false }
 
@@ -238,11 +148,6 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
-    // =====================================================
-    // Intervention Preferences
-    // =====================================================
-
-    /** "LOW" | "MEDIUM" | "HIGH" */
     val interventionIntensity: Flow<String> = context.dataStore.data
         .map { prefs ->
             val raw = (prefs[PreferencesKeys.INTERVENTION_INTENSITY] ?: "MEDIUM").uppercase()
@@ -253,9 +158,8 @@ class PreferencesManager(private val context: Context) {
         }
 
     suspend fun setInterventionIntensity(intensity: String, syncCloud: Boolean = true) {
-        val normalized = intensity.uppercase()
-        val safe = when (normalized) {
-            "LOW", "MEDIUM", "HIGH" -> normalized
+        val safe = when (intensity.uppercase()) {
+            "LOW", "MEDIUM", "HIGH" -> intensity.uppercase()
             else -> "MEDIUM"
         }
 
@@ -268,7 +172,6 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
-    /** e.g. "gentle", "humorous", "direct" */
     val toneStyle: Flow<String> = context.dataStore.data
         .map { prefs ->
             prefs[PreferencesKeys.TONE_STYLE]?.trim()?.ifBlank { "gentle" } ?: "gentle"
@@ -282,57 +185,6 @@ class PreferencesManager(private val context: Context) {
         syncPreferencesToFirestore()
     }
 
-    /** Recent goal summary for prompt engineering, e.g. "prepare IELTS" */
-    val recentGoalContext: Flow<String?> = context.dataStore.data
-        .map { prefs ->
-            prefs[PreferencesKeys.RECENT_GOAL_CONTEXT]
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-        }
-
-    suspend fun setRecentGoalContext(text: String?) {
-        val cleaned = text?.trim()?.takeIf { it.isNotBlank() }
-        context.dataStore.edit { prefs ->
-            if (cleaned == null) {
-                prefs.remove(PreferencesKeys.RECENT_GOAL_CONTEXT)
-            } else {
-                prefs[PreferencesKeys.RECENT_GOAL_CONTEXT] = cleaned
-            }
-        }
-        syncPreferencesToFirestore()
-    }
-
-    /** Recent interest summary for prompt engineering, e.g. "music, drawing, fitness" */
-    val recentInterestContext: Flow<String?> = context.dataStore.data
-        .map { prefs ->
-            prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT]
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-        }
-
-    suspend fun setRecentInterestContext(text: String?) {
-        val cleaned = text?.trim()?.takeIf { it.isNotBlank() }
-        context.dataStore.edit { prefs ->
-            if (cleaned == null) {
-                prefs.remove(PreferencesKeys.RECENT_INTEREST_CONTEXT)
-            } else {
-                prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT] = cleaned
-            }
-        }
-        syncPreferencesToFirestore()
-    }
-
-    // =====================================================
-    // Firestore Sync
-    // =====================================================
-
-    /**
-     * Sync current local preferences (DataStore) to Firestore
-     *
-     * IMPORTANT:
-     * - Only sync preference / prompt-context style fields
-     * - Do NOT upload usage events or runtime analytics here
-     */
     private suspend fun syncPreferencesToFirestore() {
         val userId = firebaseAuth.currentUser?.uid ?: return
 
@@ -342,9 +194,8 @@ class PreferencesManager(private val context: Context) {
             val userPreferences = UserPreferences(
                 interventionIntensity = (prefs[PreferencesKeys.INTERVENTION_INTENSITY] ?: "MEDIUM").uppercase(),
                 toneStyle = prefs[PreferencesKeys.TONE_STYLE] ?: "gentle",
-                recentGoalContext = prefs[PreferencesKeys.RECENT_GOAL_CONTEXT],
-                recentInterestContext = prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT],
 
+                dailyGoalMinutes = prefs[PreferencesKeys.DAILY_GOAL_MINUTES] ?: 240,
                 notificationsEnabled = prefs[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true,
                 focusStrictMode = prefs[PreferencesKeys.FOCUS_STRICT_MODE] ?: false,
                 darkMode = prefs[PreferencesKeys.DARK_MODE] ?: "system",
@@ -362,10 +213,6 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
-    /**
-     * Load preferences from Firestore (called on login)
-     * - Pulls intervention preferences and local settings into DataStore
-     */
     suspend fun loadPreferencesFromFirestore(): Boolean {
         val userId = firebaseAuth.currentUser?.uid ?: return false
 
@@ -381,20 +228,6 @@ class PreferencesManager(private val context: Context) {
                     prefs[PreferencesKeys.TONE_STYLE] =
                         firestorePrefs.toneStyle.ifBlank { "gentle" }
 
-                    firestorePrefs.recentGoalContext
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let {
-                            prefs[PreferencesKeys.RECENT_GOAL_CONTEXT] = it
-                        } ?: prefs.remove(PreferencesKeys.RECENT_GOAL_CONTEXT)
-
-                    firestorePrefs.recentInterestContext
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let {
-                            prefs[PreferencesKeys.RECENT_INTEREST_CONTEXT] = it
-                        } ?: prefs.remove(PreferencesKeys.RECENT_INTEREST_CONTEXT)
-
                     prefs[PreferencesKeys.NOTIFICATIONS_ENABLED] =
                         firestorePrefs.notificationsEnabled
 
@@ -403,6 +236,9 @@ class PreferencesManager(private val context: Context) {
 
                     prefs[PreferencesKeys.DARK_MODE] =
                         firestorePrefs.darkMode
+
+                    prefs[PreferencesKeys.DAILY_GOAL_MINUTES] =
+                        firestorePrefs.dailyGoalMinutes
 
                     prefs[PreferencesKeys.ENABLED_TRACKED_APPS] =
                         firestorePrefs.enabledTrackedApps.toSet()
@@ -417,5 +253,15 @@ class PreferencesManager(private val context: Context) {
             Log.e("PreferencesManager", "Failed to load preferences from Firestore", e)
             false
         }
+    }
+
+    val focusStrictMode: Flow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[PreferencesKeys.FOCUS_STRICT_MODE] ?: false }
+
+    suspend fun setFocusStrictMode(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.FOCUS_STRICT_MODE] = enabled
+        }
+        syncPreferencesToFirestore()
     }
 }

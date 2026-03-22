@@ -1,5 +1,6 @@
 package com.qian.scrollsanity.ui.screens
 
+import android.util.Log
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -30,8 +31,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.qian.scrollsanity.data.usagedata.AppUsageInfo
 import com.qian.scrollsanity.data.perferences.PreferencesManager
+
+import com.qian.scrollsanity.data.usagedata.AppUsageInfo
 import com.qian.scrollsanity.data.usagedata.TrackedApps
 import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
 import com.qian.scrollsanity.ui.theme.AreteAccent
@@ -53,7 +55,9 @@ fun HomeScreen() {
     val dailyGoal by prefsManager.dailyGoalMinutes.collectAsState(initial = 240)
 
     // Per-app toggles (enabled set of TrackedAppId)
-    val enabledTracked by prefsManager.enabledTrackedApps.collectAsState(initial = TrackedApps.allIds)
+    val enabledTracked by prefsManager.enabledTrackedApps.collectAsState(
+        initial = TrackedApps.allIds
+    )
 
     // Auto-refresh permissions when screen resumes
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -62,6 +66,11 @@ fun HomeScreen() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasUsagePermission = usageRepo.hasUsagePermission()
                 hasAccessibilityPermission = usageRepo.hasAccessibilityPermission()
+
+                Log.d(
+                    "HOME_STATS",
+                    "ON_RESUME usagePermission=$hasUsagePermission accessibilityPermission=$hasAccessibilityPermission"
+                )
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -74,14 +83,21 @@ fun HomeScreen() {
     LaunchedEffect(hasUsagePermission, enabledTracked) {
         if (hasUsagePermission) {
             todayStats = usageRepo.getTodayUsageStats(enabledTracked)
+
+            Log.d("HOME_STATS", "enabledTracked=$enabledTracked")
+            Log.d("HOME_STATS", "todayStats=$todayStats")
+            Log.d(
+                "HOME_STATS",
+                "totalMinutes=${todayStats.sumOf { it.usageTimeMinutes }}"
+            )
         } else {
             todayStats = emptyList()
+            Log.d("HOME_STATS", "No usage permission, todayStats cleared")
         }
     }
 
     val totalMinutes = todayStats.sumOf { it.usageTimeMinutes }
     val progressPercent = (totalMinutes.toFloat() / dailyGoal.toFloat()).coerceIn(0f, 1.5f)
-
     val usedTodayCount = todayStats.count { it.usageTimeMinutes > 0 }
 
     if (!hasUsagePermission || !hasAccessibilityPermission) {
@@ -97,6 +113,11 @@ fun HomeScreen() {
             onRefreshClick = {
                 hasUsagePermission = usageRepo.hasUsagePermission()
                 hasAccessibilityPermission = usageRepo.hasAccessibilityPermission()
+
+                Log.d(
+                    "HOME_STATS",
+                    "Manual refresh usagePermission=$hasUsagePermission accessibilityPermission=$hasAccessibilityPermission"
+                )
             }
         )
     } else {
@@ -106,7 +127,6 @@ fun HomeScreen() {
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -116,7 +136,6 @@ fun HomeScreen() {
                 )
             }
 
-            // Progress Ring
             item {
                 ProgressRingCard(
                     totalMinutes = totalMinutes,
@@ -125,7 +144,6 @@ fun HomeScreen() {
                 )
             }
 
-            // Quick Stats
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -146,7 +164,6 @@ fun HomeScreen() {
                 }
             }
 
-            // Tracked Apps (enabled only)
             item {
                 Text(
                     text = "Tracked Apps",
@@ -174,7 +191,6 @@ fun HomeScreen() {
                 }
             }
 
-            // Motivation Card
             item {
                 MotivationCard(progressPercent)
                 Spacer(modifier = Modifier.height(16.dp))
@@ -223,7 +239,6 @@ fun PermissionRequest(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Usage Permission
         if (!hasUsagePermission) {
             PermissionItem(
                 icon = "📊",
@@ -235,7 +250,6 @@ fun PermissionRequest(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Accessibility Permission
         if (!hasAccessibilityPermission) {
             PermissionItem(
                 icon = "🔒",
@@ -269,10 +283,11 @@ fun PermissionItem(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isGranted)
+            containerColor = if (isGranted) {
                 MaterialTheme.colorScheme.primaryContainer
-            else
+            } else {
                 MaterialTheme.colorScheme.surface
+            }
         )
     ) {
         Row(
@@ -347,7 +362,6 @@ fun ProgressRingCard(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(180.dp)
             ) {
-                // Background ring
                 Canvas(modifier = Modifier.size(180.dp)) {
                     drawArc(
                         color = Color.LightGray.copy(alpha = 0.3f),
@@ -358,7 +372,6 @@ fun ProgressRingCard(
                     )
                 }
 
-                // Progress ring
                 Canvas(modifier = Modifier.size(180.dp)) {
                     drawArc(
                         color = progressColor,
@@ -369,7 +382,6 @@ fun ProgressRingCard(
                     )
                 }
 
-                // Center text
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = formatTime(totalMinutes),
@@ -432,9 +444,9 @@ fun AppUsageRow(
     maxMinutes: Int
 ) {
     val context = LocalContext.current
-    val progress = if (maxMinutes <= 0) 0f else app.usageTimeMinutes.toFloat() / maxMinutes.toFloat()
+    val progress =
+        if (maxMinutes <= 0) 0f else app.usageTimeMinutes.toFloat() / maxMinutes.toFloat()
 
-    // Get app icon from package manager
     val appIcon = remember(app.packageName) {
         try {
             context.packageManager.getApplicationIcon(app.packageName).toBitmap().asImageBitmap()
@@ -455,7 +467,6 @@ fun AppUsageRow(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // App icon
             if (appIcon != null) {
                 Image(
                     bitmap = appIcon,
@@ -465,7 +476,6 @@ fun AppUsageRow(
                         .clip(RoundedCornerShape(10.dp))
                 )
             } else {
-                // Fallback to first letter if icon can't be loaded
                 Box(
                     modifier = Modifier
                         .size(44.dp)

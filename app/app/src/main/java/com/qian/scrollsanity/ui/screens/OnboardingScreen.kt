@@ -16,6 +16,18 @@ import com.google.firebase.auth.FirebaseAuth
 import com.qian.scrollsanity.data.config.FirestoreRepository
 import com.qian.scrollsanity.data.onboarding.OnboardingInput
 
+/**
+ * OnboardingScreen
+ *
+ * Responsibilities:
+ * 1. Collect initial user profile information.
+ * 2. Collect initial preference settings (tone + intensity).
+ * 3. Seed the first goal(s) and interest(s) collections.
+ *
+ * Notes:
+ * - This screen no longer writes recentGoalContext / recentInterestContext.
+ * - Goals and interests are now the real source of truth.
+ */
 @Composable
 fun OnboardingScreen(
     onFinished: () -> Unit
@@ -24,7 +36,6 @@ fun OnboardingScreen(
     val userId = remember { FirebaseAuth.getInstance().currentUser?.uid }
 
     var nickname by remember { mutableStateOf("") }
-    var recentGoalContext by remember { mutableStateOf("") }
     var goalInput by remember { mutableStateOf("") }
     var interestInput by remember { mutableStateOf("") }
 
@@ -43,7 +54,6 @@ fun OnboardingScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-
         Spacer(modifier = Modifier.height(10.dp))
 
         Text(
@@ -75,22 +85,12 @@ fun OnboardingScreen(
 
         OnboardingCard(title = "What are you working toward?") {
             OutlinedTextField(
-                value = recentGoalContext,
-                onValueChange = { recentGoalContext = it },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-                label = { Text("Recent goal context (e.g. prepare IELTS)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-            )
-        }
-
-        OnboardingCard(title = "Add an initial goal") {
-            OutlinedTextField(
                 value = goalInput,
                 onValueChange = { goalInput = it },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
-                label = { Text("Goal (e.g. No TikTok after 11pm)") }
+                label = { Text("Goal (e.g. Prepare IELTS / No TikTok after 11pm)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
         }
 
@@ -151,7 +151,8 @@ fun OnboardingScreen(
         if (!isSaving) return@LaunchedEffect
         if (userId == null) return@LaunchedEffect
 
-        val goals = listOf(goalInput.trim()).filter { it.isNotBlank() }
+        val goals = listOf(goalInput.trim())
+            .filter { it.isNotBlank() }
 
         val interests = interestInput
             .split(",")
@@ -163,8 +164,6 @@ fun OnboardingScreen(
             nickname = nickname.trim(),
             toneStyle = toneStyle,
             interventionIntensity = interventionIntensity,
-            recentGoalContext = recentGoalContext.ifBlank { null },
-            recentInterestContext = interests.takeIf { it.isNotEmpty() }?.joinToString(", "),
             goals = goals,
             interests = interests
         )
@@ -221,7 +220,6 @@ private fun StyleChips(
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-
                     Text(
                         text = option.replaceFirstChar { it.uppercase() },
                         modifier = Modifier.weight(1f)
@@ -255,7 +253,6 @@ private fun IntensityChips(
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-
                     Text(
                         text = option,
                         modifier = Modifier.weight(1f)

@@ -1,8 +1,10 @@
 package com.qian.scrollsanity.ui.screens
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.text.TextUtils
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.firebase.auth.FirebaseAuth
+import com.qian.scrollsanity.blocker.monitor.AccessibilityMonitorService
 import com.qian.scrollsanity.data.perferences.PreferencesManager
 import com.qian.scrollsanity.data.usagedata.TrackedApps
 import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
@@ -276,7 +279,6 @@ fun SettingsScreen(
 
             SectionHeader("Interests")
             SettingsCard {
-
                 SettingsRow(
                     icon = Icons.Rounded.TrackChanges,
                     title = "Interests",
@@ -285,15 +287,22 @@ fun SettingsScreen(
                 )
 
                 if (preview.isNotEmpty()) {
-                    Column(Modifier.padding(start = 56.dp, end = 16.dp, bottom = 16.dp)) {
-                        preview.forEach { i ->
+                    Column(
+                        modifier = Modifier.padding(
+                            start = 56.dp,
+                            end = 16.dp,
+                            bottom = 16.dp
+                        )
+                    ) {
+                        preview.forEach { interest ->
                             Text(
-                                text = "• $i",
+                                text = "• ${interest.text}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
+
                         if (interestCount > 3) {
                             Text(
                                 text = "+${interestCount - 3} more",
@@ -305,9 +314,8 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
-
         // =========================
         // TRACKED APPS
         // =========================
@@ -599,13 +607,25 @@ private fun PermissionRefreshOnResume(onResume: () -> Unit) {
  * ⚠️ 这里的 serviceName 必须和你 Manifest 里声明的 service 完全一致。
  */
 private fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    val packageName = context.packageName
-    val serviceName = "$packageName/.blocker.AccessibilityMonitorService"
+    val expectedComponent = ComponentName(
+        context,
+        AccessibilityMonitorService::class.java
+    ).flattenToString()
 
     val enabledServices = Settings.Secure.getString(
         context.contentResolver,
         Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
     ) ?: return false
 
-    return enabledServices.contains(serviceName)
+    val splitter = TextUtils.SimpleStringSplitter(':')
+    splitter.setString(enabledServices)
+
+    while (splitter.hasNext()) {
+        val service = splitter.next()
+        if (service.equals(expectedComponent, ignoreCase = true)) {
+            return true
+        }
+    }
+
+    return false
 }

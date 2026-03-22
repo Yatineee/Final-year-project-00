@@ -6,20 +6,23 @@ import java.util.Date
 /**
  * UserPreferences (Firestore: users/{uid}/data/preferences)
  *
- * ✅ New fields (ScrollSanity design):
- * - interventionIntensity: "LOW" | "MEDIUM" | "HIGH"
- * - toneStyle: e.g. "gentle", "humorous", "direct"
- * - interests: List<String>
- * - recentGoalContext: user's recent goal (e.g. "prepare an exam")
+ * Primary fields:
+ * - interventionIntensity
+ * - toneStyle
+ * - dailyGoalMinutes
+ * - notificationsEnabled
+ * - focusStrictMode
+ * - darkMode
+ * - enabledTrackedApps
  *
- * ⚠️ Legacy fields are kept temporarily to avoid breaking existing code paths.
- * You can remove them once UI/PreferencesManager migration is complete.
+ * Notes:
+ * - Goals and interests are now managed through their own collections.
+ * - This preferences model no longer stores recentGoalContext or
+ *   recentInterestContext as primary app state.
  */
 data class UserPreferences(
     val interventionIntensity: String = "MEDIUM",
     val toneStyle: String = "gentle",
-    val recentGoalContext: String? = null,
-    val recentInterestContext: String? = null,
 
     val dailyGoalMinutes: Int = 240,
     val notificationsEnabled: Boolean = true,
