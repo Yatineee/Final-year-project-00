@@ -2,13 +2,29 @@ package com.qian.scrollsanity.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.FirebaseAuth
-import com.qian.scrollsanity.data.config.FirestoreRepository
-import com.qian.scrollsanity.data.perferences.PreferencesManager
+import com.qian.scrollsanity.domain.model.session.TrackedAppId
 import com.qian.scrollsanity.domain.model.user.GoalItem
 import com.qian.scrollsanity.domain.model.user.InterestItem
 import com.qian.scrollsanity.domain.model.user.UserPreferences
 import com.qian.scrollsanity.domain.model.user.UserProfile
+import com.qian.scrollsanity.domain.repo.AuthRepo
+import com.qian.scrollsanity.domain.usecase.user.AddGoalUseCase
+import com.qian.scrollsanity.domain.usecase.user.AddInterestUseCase
+import com.qian.scrollsanity.domain.usecase.user.DeleteGoalUseCase
+import com.qian.scrollsanity.domain.usecase.user.DeleteInterestUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveGoalsUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveInterestsUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveUserPreferencesUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveUserProfileUseCase
+import com.qian.scrollsanity.domain.usecase.user.SetGoalAchievedUseCase
+import com.qian.scrollsanity.domain.usecase.user.SetInterestAchievedUseCase
+import com.qian.scrollsanity.domain.usecase.user.SetTrackedAppEnabledUseCase
+import com.qian.scrollsanity.domain.usecase.user.SyncUserPreferencesFromRemoteUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateDisplayNameUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateInterventionIntensityUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateNicknameUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateNotificationsEnabledUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateToneStyleUseCase
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -17,53 +33,41 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/**
- * SettingsViewModel
- *
- * Responsibilities:
- * 1. Expose profile, preferences, goals, and interests for the signed-in user.
- * 2. Read account-bound data from Firestore using the current FirebaseAuth uid.
- * 3. Keep Settings UI aligned with the actual signed-in account.
- * 4. Write profile / preference / goal / interest changes back to Firestore.
- *
- * Data source design:
- * - Profile: users/{uid}/data/profile
- * - Preferences: users/{uid}/data/preferences
- * - Goals: users/{uid}/goals/{goalId}
- * - Interests: users/{uid}/interests/{interestId}
- *
- * Important design note:
- * - This ViewModel no longer treats recentGoalContext / recentInterestContext
- *   as primary UI data.
- * - Settings and related screens should directly read from goals and interests.
- */
 class SettingsViewModel(
-    private val firestoreRepo: FirestoreRepository,
-    private val preferencesManager: PreferencesManager
+    private val authRepo: AuthRepo,
+    private val observeUserProfileUseCase: ObserveUserProfileUseCase,
+    private val updateNicknameUseCase: UpdateNicknameUseCase,
+    private val updateDisplayNameUseCase: UpdateDisplayNameUseCase,
+    private val observeUserPreferencesUseCase: ObserveUserPreferencesUseCase,
+    private val updateInterventionIntensityUseCase: UpdateInterventionIntensityUseCase,
+    private val updateToneStyleUseCase: UpdateToneStyleUseCase,
+    private val updateNotificationsEnabledUseCase: UpdateNotificationsEnabledUseCase,
+    private val setTrackedAppEnabledUseCase: SetTrackedAppEnabledUseCase,
+    private val syncUserPreferencesFromRemoteUseCase: SyncUserPreferencesFromRemoteUseCase,
+    private val observeGoalsUseCase: ObserveGoalsUseCase,
+    private val addGoalUseCase: AddGoalUseCase,
+    private val setGoalAchievedUseCase: SetGoalAchievedUseCase,
+    private val deleteGoalUseCase: DeleteGoalUseCase,
+    private val observeInterestsUseCase: ObserveInterestsUseCase,
+    private val addInterestUseCase: AddInterestUseCase,
+    private val setInterestAchievedUseCase: SetInterestAchievedUseCase,
+    private val deleteInterestUseCase: DeleteInterestUseCase
 ) : ViewModel() {
 
-    /**
-     * Returns the uid of the currently signed-in Firebase user.
-     * Returns null when there is no authenticated user.
-     */
     private val userId: String?
-        get() = FirebaseAuth.getInstance().currentUser?.uid
+        get() = authRepo.getCurrentUserId()
 
-    // =====================================================
-    // PROFILE
-    // =====================================================
+    init {
+        viewModelScope.launch {
+            syncUserPreferencesFromRemoteUseCase()
+        }
+    }
 
-    /**
-     * Live profile document for the current account.
-     *
-     * Source:
-     * users/{uid}/data/profile
-     */
     val profile: StateFlow<UserProfile?> =
         flow {
             val uid = userId
             if (uid != null) {
-                emitAll(firestoreRepo.observeUserProfile(uid))
+                emitAll(observeUserProfileUseCase(uid))
             } else {
                 emit(null)
             }
@@ -73,55 +77,15 @@ class SettingsViewModel(
             initialValue = null
         )
 
-    /**
-     * Updates the in-app nickname stored in the profile document.
-     */
-    fun updateNickname(nickname: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.updateNickname(uid, nickname.trim())
-        }
-    }
-
-    /**
-     * Updates the display name stored in the profile document.
-     */
-    fun updateDisplayName(displayName: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.updateDisplayName(uid, displayName.trim())
-        }
-    }
-
-    // =====================================================
-    // PREFERENCES
-    // =====================================================
-
-    /**
-     * Live preferences document for the current account.
-     *
-     * Source:
-     * users/{uid}/data/preferences
-     */
     val preferences: StateFlow<UserPreferences?> =
-        flow {
-            val uid = userId
-            if (uid != null) {
-                emitAll(firestoreRepo.observePreferences(uid))
-            } else {
-                emit(null)
-            }
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
+        observeUserPreferencesUseCase()
+            .map<UserPreferences, UserPreferences?> { it }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = null
+            )
 
-    /**
-     * Current intervention intensity.
-     *
-     * Falls back to MEDIUM when no preferences document exists yet.
-     */
     val interventionIntensity: StateFlow<String> =
         preferences
             .map { prefs -> prefs?.interventionIntensity ?: "MEDIUM" }
@@ -131,11 +95,6 @@ class SettingsViewModel(
                 initialValue = "MEDIUM"
             )
 
-    /**
-     * Current intervention tone style.
-     *
-     * Falls back to "gentle" when no preferences document exists yet.
-     */
     val toneStyle: StateFlow<String> =
         preferences
             .map { prefs -> prefs?.toneStyle ?: "gentle" }
@@ -145,48 +104,36 @@ class SettingsViewModel(
                 initialValue = "gentle"
             )
 
-    /**
-     * Updates intervention intensity in Firestore.
-     *
-     * Also mirrors the value into local DataStore so non-account-specific
-     * fallback/cache state stays aligned.
-     */
-    fun updateInterventionIntensity(intensity: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.updateInterventionIntensity(uid, intensity)
-            preferencesManager.setInterventionIntensity(intensity)
-        }
-    }
+    val notificationsEnabled: StateFlow<Boolean> =
+        preferences
+            .map { prefs -> prefs?.notificationsEnabled ?: true }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = true
+            )
 
-    /**
-     * Updates tone style in Firestore.
-     *
-     * Also mirrors the value into local DataStore.
-     */
-    fun updateToneStyle(style: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.updateToneStyle(uid, style)
-            preferencesManager.setToneStyle(style)
-        }
-    }
+    val enabledTrackedApps: StateFlow<Set<TrackedAppId>> =
+        preferences
+            .map { prefs ->
+                prefs?.enabledTrackedApps
+                    ?.mapNotNull { raw ->
+                        runCatching { TrackedAppId.valueOf(raw) }.getOrNull()
+                    }
+                    ?.toSet()
+                    ?: emptySet()
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptySet()
+            )
 
-    // =====================================================
-    // GOALS
-    // =====================================================
-
-    /**
-     * Live goal list for the current user.
-     *
-     * Source:
-     * users/{uid}/goals/{goalId}
-     */
     val goals: StateFlow<List<GoalItem>> =
         flow {
             val uid = userId
             if (uid != null) {
-                emitAll(firestoreRepo.observeGoals(uid))
+                emitAll(observeGoalsUseCase(uid))
             } else {
                 emit(emptyList())
             }
@@ -196,51 +143,11 @@ class SettingsViewModel(
             initialValue = emptyList()
         )
 
-    /**
-     * Adds a goal document for the current user.
-     */
-    fun addGoal(text: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.addGoal(uid, text)
-        }
-    }
-
-    /**
-     * Switches a goal between active and achieved.
-     */
-    fun setGoalAchieved(goalId: String, achieved: Boolean) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.setGoalAchieved(uid, goalId, achieved)
-        }
-    }
-
-    /**
-     * Deletes a goal document.
-     */
-    fun deleteGoal(goalId: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.deleteGoal(uid, goalId)
-        }
-    }
-
-    // =====================================================
-    // INTERESTS
-    // =====================================================
-
-    /**
-     * Live interest list for the current user.
-     *
-     * Source:
-     * users/{uid}/interests/{interestId}
-     */
     val interests: StateFlow<List<InterestItem>> =
         flow {
             val uid = userId
             if (uid != null) {
-                emitAll(firestoreRepo.observeInterests(uid))
+                emitAll(observeInterestsUseCase(uid))
             } else {
                 emit(emptyList())
             }
@@ -250,46 +157,6 @@ class SettingsViewModel(
             initialValue = emptyList()
         )
 
-    /**
-     * Adds an interest document for the current user.
-     */
-    fun addInterest(text: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.addInterest(uid, text)
-        }
-    }
-
-    /**
-     * Switches an interest between active and achieved.
-     */
-    fun setInterestAchieved(interestId: String, achieved: Boolean) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.setInterestAchieved(uid, interestId, achieved)
-        }
-    }
-
-    /**
-     * Deletes an interest document.
-     */
-    fun deleteInterest(interestId: String) {
-        val uid = userId ?: return
-        viewModelScope.launch {
-            firestoreRepo.deleteInterest(uid, interestId)
-        }
-    }
-
-    // =====================================================
-    // DERIVED HELPERS
-    // =====================================================
-
-    /**
-     * Derived helper for places that want a single quick goal preview.
-     *
-     * This is computed from the real goals list instead of relying on
-     * recentGoalContext as stored source-of-truth.
-     */
     val firstActiveGoalText: StateFlow<String?> =
         goals
             .map { items ->
@@ -301,12 +168,6 @@ class SettingsViewModel(
                 initialValue = null
             )
 
-    /**
-     * Derived helper for places that want a short interest preview string.
-     *
-     * This is computed from the real interests list instead of relying on
-     * recentInterestContext as stored source-of-truth.
-     */
     val activeInterestPreview: StateFlow<String?> =
         interests
             .map { items ->
@@ -323,4 +184,84 @@ class SettingsViewModel(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = null
             )
+
+    fun updateNickname(nickname: String) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            updateNicknameUseCase(uid, nickname)
+        }
+    }
+
+    fun updateDisplayName(displayName: String) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            updateDisplayNameUseCase(uid, displayName)
+        }
+    }
+
+    fun updateInterventionIntensity(intensity: String) {
+        viewModelScope.launch {
+            updateInterventionIntensityUseCase(intensity)
+        }
+    }
+
+    fun updateToneStyle(style: String) {
+        viewModelScope.launch {
+            updateToneStyleUseCase(style)
+        }
+    }
+
+    fun updateNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            updateNotificationsEnabledUseCase(enabled)
+        }
+    }
+
+    fun setTrackedAppEnabled(id: TrackedAppId, enabled: Boolean) {
+        viewModelScope.launch {
+            setTrackedAppEnabledUseCase(id, enabled)
+        }
+    }
+
+    fun addGoal(text: String) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            addGoalUseCase(uid, text)
+        }
+    }
+
+    fun setGoalAchieved(goalId: String, achieved: Boolean) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            setGoalAchievedUseCase(uid, goalId, achieved)
+        }
+    }
+
+    fun deleteGoal(goalId: String) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            deleteGoalUseCase(uid, goalId)
+        }
+    }
+
+    fun addInterest(text: String) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            addInterestUseCase(uid, text)
+        }
+    }
+
+    fun setInterestAchieved(interestId: String, achieved: Boolean) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            setInterestAchievedUseCase(uid, interestId, achieved)
+        }
+    }
+
+    fun deleteInterest(interestId: String) {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            deleteInterestUseCase(uid, interestId)
+        }
+    }
 }

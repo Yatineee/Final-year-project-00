@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.google.firebase.auth.FirebaseAuth
-import com.qian.scrollsanity.data.config.FirestoreRepository
+import com.qian.scrollsanity.data.remote.firestore.FirestoreRepository
 
 @Composable
 fun GateScreen(

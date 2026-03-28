@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.qian.scrollsanity.domain.model.dashboard.LiveDashboardSummary
-import com.qian.scrollsanity.domain.session.LiveSessionStateHolder
-import com.qian.scrollsanity.domain.usecase.dashboard.GetLiveDashboardSummaryUseCase
+import com.qian.scrollsanity.domain.tempdata.LiveSessionStateHolder
+import com.qian.scrollsanity.domain.usecase.old.dashboard.GetLiveDashboardSummaryUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
-import com.qian.scrollsanity.data.config.FirestoreRepository
+import com.qian.scrollsanity.data.remote.firestore.FirestoreRepository
 import com.qian.scrollsanity.domain.model.user.GoalItem
 
 import kotlinx.coroutines.launch

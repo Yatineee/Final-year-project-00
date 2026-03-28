@@ -1,5 +1,8 @@
 package com.qian.scrollsanity.data.usagedata
 
+import com.qian.scrollsanity.domain.util.TrackedAppId
+import com.qian.scrollsanity.domain.util.TrackedAppMeta
+import com.qian.scrollsanity.domain.util.TrackedApps
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

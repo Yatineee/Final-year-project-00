@@ -1,7 +1,7 @@
 package com.qian.scrollsanity.domain.policy.deviation
 
-import com.qian.scrollsanity.domain.model.deviation.SessionBaselineStats
-import com.qian.scrollsanity.domain.model.usagedata.AppSession
+import com.qian.scrollsanity.domain.model.old.deviation.SessionBaselineStats
+import com.qian.scrollsanity.domain.model.session.AppSession
 import kotlin.math.abs
 
 object SessionBaselineCalculator {

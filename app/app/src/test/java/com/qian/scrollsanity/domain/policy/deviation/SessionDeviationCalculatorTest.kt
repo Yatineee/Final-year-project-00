@@ -1,6 +1,6 @@
 package com.qian.scrollsanity.domain.policy.deviation
 
-import com.qian.scrollsanity.domain.model.deviation.SessionBaselineStats
+import com.qian.scrollsanity.domain.model.old.deviation.SessionBaselineStats
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,6 +1,6 @@
 package com.qian.scrollsanity.domain.policy.deviation
 
-import com.qian.scrollsanity.domain.model.deviation.SessionBaselineStats
+import com.qian.scrollsanity.domain.model.old.deviation.SessionBaselineStats
 
 /**
  * Computes a robust deviation score for the current session duration

@@ -1,5 +1,6 @@
 package com.qian.scrollsanity.blocker.bus
 
+import com.qian.scrollsanity.controller.blocker.old.bus.InterventionEventBus
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first

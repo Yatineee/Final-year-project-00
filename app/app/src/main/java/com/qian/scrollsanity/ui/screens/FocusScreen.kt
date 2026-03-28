@@ -20,7 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
-import com.qian.scrollsanity.domain.model.dashboard.DailyAverageSessionPoint
+import com.qian.scrollsanity.domain.model.old.dashboard.DailyAverageSessionPoint
 import com.qian.scrollsanity.ui.dashboard.DashboardViewModel
 
 @Composable

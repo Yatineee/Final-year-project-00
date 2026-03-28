@@ -1,6 +1,6 @@
 package com.qian.scrollsanity.domain.policy.deviation
 
-import com.qian.scrollsanity.domain.model.usagedata.AppSession
+import com.qian.scrollsanity.domain.model.session.AppSession
 
 /**
  * Normalizes raw tracked-app sessions into behavior-level sessions.

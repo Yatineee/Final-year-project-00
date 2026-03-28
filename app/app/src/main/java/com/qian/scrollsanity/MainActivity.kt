@@ -33,16 +33,40 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import com.qian.scrollsanity.data.config.FirestoreRepository
-import com.qian.scrollsanity.data.dashboard.DashboardMetricsRepoImpl
-import com.qian.scrollsanity.data.perferences.PreferencesManager
-import com.qian.scrollsanity.data.sync.UsageSyncHelper
-import com.qian.scrollsanity.data.usagedata.TrackedAppId
-import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
+import com.qian.scrollsanity.data.local.usagestats.UsageStatsRepository
+import com.qian.scrollsanity.data.local.user.UserPreferencesLocalDataSource
+import com.qian.scrollsanity.data.old.perferences.PreferencesManager
+import com.qian.scrollsanity.data.old.sync.UsageSyncHelper
+import com.qian.scrollsanity.data.remote.firestore.FirestoreRepository
+import com.qian.scrollsanity.data.remote.user.UserPreferencesRemoteDataSource
+import com.qian.scrollsanity.data.repo.AuthRepoImpl
+import com.qian.scrollsanity.data.repo.DashboardMetricsRepoImpl
+import com.qian.scrollsanity.data.repo.GoalRepoImpl
+import com.qian.scrollsanity.data.repo.InterestRepoImpl
+import com.qian.scrollsanity.data.repo.UserProfileRepoImpl
+import com.qian.scrollsanity.data.repo.UserSettingsRepoImpl
+import com.qian.scrollsanity.domain.model.session.TrackedAppId
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
-import com.qian.scrollsanity.domain.usecase.dashboard.GetLiveDashboardSummaryUseCase
-import com.qian.scrollsanity.domain.usecase.intervention.EnabledTrackedProvider
-import com.qian.scrollsanity.domain.usecase.intervention.IntensityProvider
+import com.qian.scrollsanity.domain.usecase.old.dashboard.GetLiveDashboardSummaryUseCase
+import com.qian.scrollsanity.domain.usecase.old.intervention.EnabledTrackedProvider
+import com.qian.scrollsanity.domain.usecase.old.intervention.IntensityProvider
+import com.qian.scrollsanity.domain.usecase.user.AddGoalUseCase
+import com.qian.scrollsanity.domain.usecase.user.AddInterestUseCase
+import com.qian.scrollsanity.domain.usecase.user.DeleteGoalUseCase
+import com.qian.scrollsanity.domain.usecase.user.DeleteInterestUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveGoalsUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveInterestsUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveUserPreferencesUseCase
+import com.qian.scrollsanity.domain.usecase.user.ObserveUserProfileUseCase
+import com.qian.scrollsanity.domain.usecase.user.SetGoalAchievedUseCase
+import com.qian.scrollsanity.domain.usecase.user.SetInterestAchievedUseCase
+import com.qian.scrollsanity.domain.usecase.user.SetTrackedAppEnabledUseCase
+import com.qian.scrollsanity.domain.usecase.user.SyncUserPreferencesFromRemoteUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateDisplayNameUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateInterventionIntensityUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateNicknameUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateNotificationsEnabledUseCase
+import com.qian.scrollsanity.domain.usecase.user.UpdateToneStyleUseCase
 import com.qian.scrollsanity.service.UsageSyncService
 import com.qian.scrollsanity.ui.dashboard.DashboardViewModel
 import com.qian.scrollsanity.ui.dashboard.DashboardViewModelFactory
@@ -56,6 +80,7 @@ import com.qian.scrollsanity.ui.screens.OnboardingScreen
 import com.qian.scrollsanity.ui.screens.RegisterScreen
 import com.qian.scrollsanity.ui.screens.SettingsScreen
 import com.qian.scrollsanity.ui.settings.SettingsViewModel
+import com.qian.scrollsanity.ui.settings.SettingsViewModelFactory
 import com.qian.scrollsanity.ui.theme.AreteTheme
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.first
@@ -112,12 +137,13 @@ fun AreteApp() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    val settingsViewModel = remember {
-        SettingsViewModel(
-            firestoreRepo = FirestoreRepository(),
-            preferencesManager = prefsManager
-        )
+    val settingsViewModelFactory = remember(context) {
+        createSettingsViewModelFactory(context)
     }
+
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = settingsViewModelFactory
+    )
 
     val liveDashboardSummaryUseCase = remember(context) {
         createLiveDashboardSummaryUseCase(context)
@@ -155,7 +181,6 @@ fun AreteApp() {
             }
         }
     ) { innerPadding ->
-
         NavHost(
             navController = navController,
             startDestination = "gate",
@@ -271,6 +296,45 @@ fun AreteApp() {
     }
 }
 
+private fun createSettingsViewModelFactory(
+    context: Context
+): SettingsViewModelFactory {
+    val firestoreRepository = FirestoreRepository()
+
+    val authRepo = AuthRepoImpl()
+    val userProfileRepo = UserProfileRepoImpl(firestoreRepository)
+    val goalRepo = GoalRepoImpl(firestoreRepository)
+    val interestRepo = InterestRepoImpl(firestoreRepository)
+
+    val userPreferencesLocalDataSource = UserPreferencesLocalDataSource(context)
+    val userPreferencesRemoteDataSource = UserPreferencesRemoteDataSource(firestoreRepository)
+    val userSettingsRepo = UserSettingsRepoImpl(
+        localDataSource = userPreferencesLocalDataSource,
+        remoteDataSource = userPreferencesRemoteDataSource
+    )
+
+    return SettingsViewModelFactory(
+        authRepo = authRepo,
+        observeUserProfileUseCase = ObserveUserProfileUseCase(userProfileRepo),
+        updateNicknameUseCase = UpdateNicknameUseCase(userProfileRepo),
+        updateDisplayNameUseCase = UpdateDisplayNameUseCase(userProfileRepo),
+        observeUserPreferencesUseCase = ObserveUserPreferencesUseCase(userSettingsRepo),
+        updateInterventionIntensityUseCase = UpdateInterventionIntensityUseCase(userSettingsRepo),
+        updateToneStyleUseCase = UpdateToneStyleUseCase(userSettingsRepo),
+        updateNotificationsEnabledUseCase = UpdateNotificationsEnabledUseCase(userSettingsRepo),
+        setTrackedAppEnabledUseCase = SetTrackedAppEnabledUseCase(userSettingsRepo),
+        syncUserPreferencesFromRemoteUseCase = SyncUserPreferencesFromRemoteUseCase(userSettingsRepo),
+        observeGoalsUseCase = ObserveGoalsUseCase(goalRepo),
+        addGoalUseCase = AddGoalUseCase(goalRepo),
+        setGoalAchievedUseCase = SetGoalAchievedUseCase(goalRepo),
+        deleteGoalUseCase = DeleteGoalUseCase(goalRepo),
+        observeInterestsUseCase = ObserveInterestsUseCase(interestRepo),
+        addInterestUseCase = AddInterestUseCase(interestRepo),
+        setInterestAchievedUseCase = SetInterestAchievedUseCase(interestRepo),
+        deleteInterestUseCase = DeleteInterestUseCase(interestRepo)
+    )
+}
+
 private fun createLiveDashboardSummaryUseCase(
     context: Context
 ): GetLiveDashboardSummaryUseCase {
@@ -290,7 +354,6 @@ private fun createLiveDashboardSummaryUseCase(
             return prefsManager.interventionIntensity.first()
         }
     }
-
 
     return GetLiveDashboardSummaryUseCase(
         localUsageRepo = localUsageRepo,

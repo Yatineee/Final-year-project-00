@@ -1,20 +1,48 @@
 package com.qian.scrollsanity.ui.screens
 
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.provider.Settings
-import android.text.TextUtils
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Policy
+import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.TrackChanges
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,12 +52,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.firebase.auth.FirebaseAuth
-import com.qian.scrollsanity.blocker.monitor.AccessibilityMonitorService
-import com.qian.scrollsanity.data.perferences.PreferencesManager
-import com.qian.scrollsanity.data.usagedata.TrackedApps
-import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
+import com.qian.scrollsanity.data.local.permissions.AccessibilityPermissionDataSource
+import com.qian.scrollsanity.data.local.permissions.UsageAccessPermissionDataSource
+import com.qian.scrollsanity.domain.util.TrackedApps
 import com.qian.scrollsanity.ui.settings.SettingsViewModel
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,27 +65,28 @@ fun SettingsScreen(
     onOpenInterests: () -> Unit,
     onLogout: () -> Unit
 ) {
-
     val context = LocalContext.current
-    val prefsManager = remember { PreferencesManager(context) }
-    val usageRepo = remember { UsageStatsRepository(context) }
-    val scope = rememberCoroutineScope()
+
+    val usagePermissionDataSource = remember { UsageAccessPermissionDataSource(context) }
+    val accessibilityPermissionDataSource = remember { AccessibilityPermissionDataSource(context) }
 
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val intensity by viewModel.interventionIntensity.collectAsStateWithLifecycle()
     val tone by viewModel.toneStyle.collectAsStateWithLifecycle()
     val interests by viewModel.interests.collectAsStateWithLifecycle()
-    // val recentGoal by viewModel.recentGoalContext.collectAsStateWithLifecycle()
+    val notificationsEnabled by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
+    val enabledTracked by viewModel.enabledTrackedApps.collectAsStateWithLifecycle()
 
-    val notificationsEnabled by prefsManager.notificationsEnabled.collectAsState(initial = true)
-    val enabledTracked by prefsManager.enabledTrackedApps.collectAsState(initial = TrackedApps.allIds)
-
-    var hasPermission by remember { mutableStateOf(usageRepo.hasUsagePermission()) }
-    var hasAccessibility by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
+    var hasUsagePermission by remember {
+        mutableStateOf(usagePermissionDataSource.hasPermission())
+    }
+    var hasAccessibilityPermission by remember {
+        mutableStateOf(accessibilityPermissionDataSource.hasPermission())
+    }
 
     PermissionRefreshOnResume {
-        hasPermission = usageRepo.hasUsagePermission()
-        hasAccessibility = isAccessibilityServiceEnabled(context)
+        hasUsagePermission = usagePermissionDataSource.hasPermission()
+        hasAccessibilityPermission = accessibilityPermissionDataSource.hasPermission()
     }
 
     LazyColumn(
@@ -67,25 +94,24 @@ fun SettingsScreen(
             .fillMaxSize()
             .padding(horizontal = 20.dp)
     ) {
-
         item {
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Settings", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Settings",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
             Spacer(modifier = Modifier.height(24.dp))
         }
-
-        // =========================
-        // PROFILE
-        // =========================
 
         item {
             SettingsCard {
                 Column(Modifier.padding(16.dp)) {
-
                     Row(verticalAlignment = Alignment.CenterVertically) {
-
                         Surface(
-                            modifier = Modifier.size(56.dp).clip(CircleShape),
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape),
                             color = MaterialTheme.colorScheme.primary
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -144,7 +170,7 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.Logout, null)
+                        Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Sign Out")
                     }
@@ -154,26 +180,24 @@ fun SettingsScreen(
             Spacer(Modifier.height(24.dp))
         }
 
-        // =========================
-        // =========================
-        // INTERVENTION
-        // =========================
-
         item { SectionHeader("Intervention") }
 
         item {
             SettingsCard {
                 Column(Modifier.padding(16.dp)) {
-
                     Text("Intensity", fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(12.dp))
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("LOW", "MEDIUM", "HIGH").forEach {
+                        listOf("LOW", "MEDIUM", "HIGH").forEach { value ->
                             FilterChip(
-                                selected = intensity == it,
-                                onClick = { viewModel.updateInterventionIntensity(it) },
-                                label = { Text(it.lowercase().replaceFirstChar { c -> c.uppercase() }) }
+                                selected = intensity == value,
+                                onClick = { viewModel.updateInterventionIntensity(value) },
+                                label = {
+                                    Text(
+                                        value.lowercase().replaceFirstChar { it.uppercase() }
+                                    )
+                                }
                             )
                         }
                     }
@@ -188,73 +212,27 @@ fun SettingsScreen(
                             FilterChip(
                                 selected = tone == style,
                                 onClick = { viewModel.updateToneStyle(style) },
-                                label = { Text(style.replaceFirstChar { it.uppercase() }) }
+                                label = {
+                                    Text(style.replaceFirstChar { it.uppercase() })
+                                }
                             )
                         }
                     }
 
                     Spacer(Modifier.height(20.dp))
 
-//                    var goalInput by remember(recentGoal) {
-//                        mutableStateOf(recentGoal ?: "")
-//                    }
+                    Text("Notifications", fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
 
-//                    Text("Current Focus Goal", fontWeight = FontWeight.SemiBold)
-//                    Spacer(Modifier.height(8.dp))
-//
-//                    OutlinedTextField(
-//                        value = goalInput,
-//                        onValueChange = { goalInput = it },
-//                        modifier = Modifier.fillMaxWidth(),
-//                        label = { Text("e.g. Prepare IELTS") }
-//                    )
-//
-//                    Spacer(Modifier.height(8.dp))
-//
-//                    Button(
-//                        onClick = { viewModel.updateRecentGoalContext(goalInput) },
-//                        modifier = Modifier.fillMaxWidth()
-//                    ) {
-//                        Text("Save Goal Context")
-//                    }
-
-//                    Spacer(Modifier.height(20.dp))
-
-//                    var interestsInput by remember(interests) {
-//                        mutableStateOf(interests.joinToString(", "))
-//                    }
-//
-//                    Text("Interests", fontWeight = FontWeight.SemiBold)
-//                    Spacer(Modifier.height(8.dp))
-//
-//                    OutlinedTextField(
-//                        value = interestsInput,
-//                        onValueChange = { interestsInput = it },
-//                        modifier = Modifier.fillMaxWidth(),
-//                        label = { Text("Comma separated") }
-//                    )
-//
-//                    Spacer(Modifier.height(8.dp))
-
-//                    Button(
-//                        onClick = {
-//                            viewModel.updateInterests(
-//                                interestsInput.split(",").map { it.trim() }
-//                            )
-//                        },
-//                        modifier = Modifier.fillMaxWidth()
-//                    ) {
-//                        Text("Save Interests")
-//                    }
+                    Switch(
+                        checked = notificationsEnabled,
+                        onCheckedChange = { enabled ->
+                            viewModel.updateNotificationsEnabled(enabled)
+                        }
+                    )
                 }
             }
-
-//            Spacer(Modifier.height(16.dp))
         }
-
-        // =========================
-        // GOALS
-        // =========================
 
         item {
             SectionHeader("Goals")
@@ -268,10 +246,6 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(16.dp))
         }
-
-        // =========================
-        // INTERESTS
-        // =========================
 
         item {
             val interestCount = interests.size
@@ -316,9 +290,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
-        // =========================
-        // TRACKED APPS
-        // =========================
 
         item { SectionHeader("Tracked Apps") }
 
@@ -330,7 +301,7 @@ fun SettingsScreen(
                         title = meta.displayName,
                         checked = meta.id in enabledTracked,
                         onCheckedChange = { isOn ->
-                            scope.launch { prefsManager.setTrackedAppEnabled(meta.id, isOn) }
+                            viewModel.setTrackedAppEnabled(meta.id, isOn)
                         }
                     )
 
@@ -342,23 +313,18 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-
-
-        // =========================
-        // PERMISSIONS
-        // =========================
-
         item { SectionHeader("Permissions") }
 
         item {
             SettingsCard {
-
                 SettingsRow(
                     icon = Icons.Rounded.BarChart,
                     title = "Usage Access",
-                    subtitle = if (hasPermission) "Granted ✓" else "Required for tracking",
+                    subtitle = if (hasUsagePermission) "Granted ✓" else "Required for tracking",
                     onClick = {
-                        if (!hasPermission) usageRepo.openUsageAccessSettings()
+                        if (!hasUsagePermission) {
+                            usagePermissionDataSource.openSettings()
+                        }
                     }
                 )
 
@@ -367,20 +333,20 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Rounded.Lock,
                     title = "Accessibility Service",
-                    subtitle = if (hasAccessibility) "Enabled ✓" else "Required for blocking apps",
+                    subtitle = if (hasAccessibilityPermission) {
+                        "Enabled ✓"
+                    } else {
+                        "Required for blocking apps"
+                    },
                     onClick = {
-                        if (!hasAccessibility) {
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        if (!hasAccessibilityPermission) {
+                            accessibilityPermissionDataSource.openSettings()
                         }
                     }
                 )
             }
             Spacer(Modifier.height(16.dp))
         }
-
-        // =========================
-        // ABOUT
-        // =========================
 
         item { SectionHeader("About") }
 
@@ -405,10 +371,6 @@ fun SettingsScreen(
             Spacer(Modifier.height(32.dp))
         }
 
-        // =========================
-        // FOOTER
-        // =========================
-
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -430,49 +392,6 @@ fun SettingsScreen(
         }
     }
 }
-
-// Small helper chip to keep style consistent
-//@Composable
-//private fun IntensityChip(
-//    label: String,
-//    selected: Boolean,
-//    enabled: Boolean,
-//    onClick: () -> Unit
-//) {
-//    FilterChip(
-//        selected = selected,
-//        enabled = enabled,
-//        onClick = onClick,
-//        label = { Text(label) }
-//    )
-//}
-
-//private fun setIntensity(
-//    uid: String?,
-//    chosen: String,
-//    setLocal: (String) -> Unit,
-//    setSaving: (Boolean) -> Unit,
-//    setError: (String?) -> Unit,
-//    repo: FirestoreRepository,
-//    scope: kotlinx.coroutines.CoroutineScope
-//) {
-//    setError(null)
-//    setLocal(chosen)
-//
-//    if (uid == null) {
-//        setError("Not signed in.")
-//        return
-//    }
-//
-//    setSaving(true)
-//    scope.launch {
-//        val res = repo.updateInterventionIntensity(uid, chosen)
-//        setSaving(false)
-//        if (res.isFailure) {
-//            setError(res.exceptionOrNull()?.message ?: "Failed to save intensity")
-//        }
-//    }
-//}
 
 @Composable
 fun SectionHeader(title: String) {
@@ -586,10 +505,6 @@ fun SettingsToggleRow(
     }
 }
 
-/**
- * Refresh callback when returning to the app/screen.
- * Keeps Settings permission subtitles accurate after user grants permission.
- */
 @Composable
 private fun PermissionRefreshOnResume(onResume: () -> Unit) {
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -600,32 +515,4 @@ private fun PermissionRefreshOnResume(onResume: () -> Unit) {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-}
-
-/**
- * Check if the Accessibility Service is enabled for app blocking
- * ⚠️ 这里的 serviceName 必须和你 Manifest 里声明的 service 完全一致。
- */
-private fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    val expectedComponent = ComponentName(
-        context,
-        AccessibilityMonitorService::class.java
-    ).flattenToString()
-
-    val enabledServices = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-    ) ?: return false
-
-    val splitter = TextUtils.SimpleStringSplitter(':')
-    splitter.setString(enabledServices)
-
-    while (splitter.hasNext()) {
-        val service = splitter.next()
-        if (service.equals(expectedComponent, ignoreCase = true)) {
-            return true
-        }
-    }
-
-    return false
 }

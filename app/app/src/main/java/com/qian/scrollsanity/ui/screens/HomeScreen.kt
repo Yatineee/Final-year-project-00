@@ -1,5 +1,6 @@
 package com.qian.scrollsanity.ui.screens
 
+import androidx.compose.foundation.lazy.items
 import android.util.Log
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -8,7 +9,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Timer
@@ -31,11 +31,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.qian.scrollsanity.data.perferences.PreferencesManager
-
-import com.qian.scrollsanity.data.usagedata.AppUsageInfo
-import com.qian.scrollsanity.data.usagedata.TrackedApps
-import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
+import com.qian.scrollsanity.data.old.perferences.PreferencesManager
+import com.qian.scrollsanity.domain.util.TrackedApps
+import com.qian.scrollsanity.data.remote.firestore.UsageStatsRepository
+import com.qian.scrollsanity.domain.model.dashboard.AppUsageInfo
 import com.qian.scrollsanity.ui.theme.AreteAccent
 import com.qian.scrollsanity.ui.theme.AreteDanger
 import com.qian.scrollsanity.ui.theme.AretePrimary

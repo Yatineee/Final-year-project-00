@@ -1,7 +1,7 @@
 package com.qian.scrollsanity.domain.policy.deviation
 
-import com.qian.scrollsanity.data.usagedata.TrackedAppId
-import com.qian.scrollsanity.domain.model.usagedata.AppSession
+import com.qian.scrollsanity.domain.util.TrackedAppId
+import com.qian.scrollsanity.domain.model.session.AppSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
