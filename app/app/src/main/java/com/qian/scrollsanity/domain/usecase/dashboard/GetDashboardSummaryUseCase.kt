@@ -5,6 +5,14 @@ import com.qian.scrollsanity.domain.model.dashboard.DashboardSummary
 import com.qian.scrollsanity.domain.repo.DashboardMetricsRepo
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
 import com.qian.scrollsanity.domain.usecase.intervention.EnabledTrackedProvider
+/**
+ * Legacy dashboard summary use case.
+ *
+ * This use case reads persisted dashboard metrics from repo.
+ * It is kept temporarily during migration to live dashboard summary.
+ */
+
+
 
 class GetDashboardSummaryUseCase(
     private val localUsageRepo: LocalUsageRepo,

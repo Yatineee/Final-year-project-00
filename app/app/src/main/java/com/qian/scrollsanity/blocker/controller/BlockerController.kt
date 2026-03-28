@@ -11,8 +11,10 @@ import com.qian.scrollsanity.data.usagedata.TrackedAppId
 import com.qian.scrollsanity.data.usagedata.TrackedApps
 import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
 import com.qian.scrollsanity.domain.policy.decision.DeviationInterventionPolicy
+import com.qian.scrollsanity.domain.policy.decision.NextInterventionThresholdPolicy
 import com.qian.scrollsanity.domain.policy.gating.CooldownPolicy
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
+import com.qian.scrollsanity.domain.session.LiveSessionStateHolder
 import com.qian.scrollsanity.domain.trigger.InterventionSessionState
 import com.qian.scrollsanity.domain.usecase.dashboard.GetDashboardSummaryUseCase
 import com.qian.scrollsanity.domain.usecase.dashboard.RecordDashboardMetricsUseCase
@@ -23,6 +25,7 @@ import com.qian.scrollsanity.domain.usecase.intervention.TriggerResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -32,17 +35,19 @@ import kotlinx.coroutines.launch
  * Responsibilities:
  * - listen to foreground package changes
  * - maintain current intervention session state
+ * - maintain live dashboard session state
  * - compute current session duration
  * - run deviation-based intervention check
  * - launch blocker UI based on TriggerResult
  *
  * Notes:
- * - session memory is stored in sessionState
- * - deviation policy is stateless and pure
+ * - intervention session memory is stored in sessionState
+ * - live dashboard session is pushed via LiveSessionStateHolder
  * - ask / trigger UI branching happens here
  */
 object BlockerController {
 
+    private val nextThresholdPolicy = NextInterventionThresholdPolicy()
     private const val TAG = "BlockerController"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -58,7 +63,13 @@ object BlockerController {
     private const val MIN_LAUNCH_GAP_MS = 1200L
 
     // =========================
-    // Session state
+    // Live session minute ticker
+    // =========================
+
+    private var minuteTickerStarted = false
+
+    // =========================
+    // Intervention session state
     // =========================
 
     private var sessionState = InterventionSessionState()
@@ -86,6 +97,19 @@ object BlockerController {
 
     fun onAccessibilityConnected(context: Context) {
         Log.d(TAG, "Accessibility service connected")
+        startMinuteTickerIfNeeded()
+    }
+
+    private fun startMinuteTickerIfNeeded() {
+        if (minuteTickerStarted) return
+        minuteTickerStarted = true
+
+        scope.launch {
+            while (true) {
+                delay(1000)
+                LiveSessionStateHolder.updateMinutes(SystemClock.elapsedRealtime())
+            }
+        }
     }
 
     /**
@@ -117,6 +141,7 @@ object BlockerController {
                 if (!isTracked) {
                     if (sessionState.inBlockedSession) {
                         Log.d(TAG, "Leaving tracked session, reset state")
+                        LiveSessionStateHolder.endSession()
                     }
 
                     currentSessionStartElapsedMs = null
@@ -140,6 +165,20 @@ object BlockerController {
                         lastCheckAtMs = 0L,
                         askedUsageTypeThisSession = false
                     )
+
+                    val trackedAppId = enabledIds.firstOrNull { id ->
+                        packageName in TrackedApps.metaFor(id).exactPackages
+                    }
+
+                    if (trackedAppId != null) {
+                        LiveSessionStateHolder.startSession(
+                            appId = trackedAppId,
+                            packageName = packageName,
+                            startElapsedMs = now
+                        )
+                    } else {
+                        Log.w(TAG, "Tracked package matched but no trackedAppId found for $packageName")
+                    }
                 }
 
                 val useCase = buildUseCase(context)
@@ -178,6 +217,19 @@ object BlockerController {
                     }
 
                     is TriggerResult.TriggerIntervention -> {
+                        val prefsManager = PreferencesManager(context)
+                        val dashboardMetricsRepo = DashboardMetricsRepoImpl(context)
+                        val recordDashboardMetricsUseCase = RecordDashboardMetricsUseCase(dashboardMetricsRepo)
+
+                        val intensity = prefsManager.interventionIntensity.first()
+
+                        val nextThreshold = nextThresholdPolicy.computeNextThreshold(
+                            intensity = intensity,
+                            triggeredZ = result.z
+                        )
+
+                        recordDashboardMetricsUseCase.recordNextInterventionThreshold(nextThreshold)
+
                         launchGapGuardOrSkip {
                             showInterventionPlaceholder(
                                 context = context,
@@ -193,6 +245,10 @@ object BlockerController {
         }
     }
 
+    /**
+     * Legacy dashboard summary builder kept temporarily during migration
+     * to live session-driven dashboard updates.
+     */
     private fun buildDashboardSummaryUseCase(context: Context): GetDashboardSummaryUseCase {
         val prefsManager = PreferencesManager(context)
         val usageRepoReal = UsageStatsRepository(context)
@@ -226,7 +282,9 @@ object BlockerController {
 
         val intensityProvider = object : IntensityProvider {
             override suspend fun getIntensity(): String {
-                return prefsManager.interventionIntensity.first()
+                val value = prefsManager.interventionIntensity.first()
+                Log.d(TAG, "IntensityProvider.getIntensity() -> $value")
+                return value
             }
         }
 

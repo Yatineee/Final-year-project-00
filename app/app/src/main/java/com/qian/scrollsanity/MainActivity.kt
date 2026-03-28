@@ -40,15 +40,16 @@ import com.qian.scrollsanity.data.sync.UsageSyncHelper
 import com.qian.scrollsanity.data.usagedata.TrackedAppId
 import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
-import com.qian.scrollsanity.domain.usecase.dashboard.GetDashboardSummaryUseCase
+import com.qian.scrollsanity.domain.usecase.dashboard.GetLiveDashboardSummaryUseCase
 import com.qian.scrollsanity.domain.usecase.intervention.EnabledTrackedProvider
+import com.qian.scrollsanity.domain.usecase.intervention.IntensityProvider
 import com.qian.scrollsanity.service.UsageSyncService
-import com.qian.scrollsanity.ui.dashboard.DashboardScreen
 import com.qian.scrollsanity.ui.dashboard.DashboardViewModel
 import com.qian.scrollsanity.ui.dashboard.DashboardViewModelFactory
 import com.qian.scrollsanity.ui.screens.FocusScreen
 import com.qian.scrollsanity.ui.screens.GateScreen
 import com.qian.scrollsanity.ui.screens.GoalsScreen
+import com.qian.scrollsanity.ui.screens.HomeScreen
 import com.qian.scrollsanity.ui.screens.InterestsScreen
 import com.qian.scrollsanity.ui.screens.LoginScreen
 import com.qian.scrollsanity.ui.screens.OnboardingScreen
@@ -118,8 +119,8 @@ fun AreteApp() {
         )
     }
 
-    val dashboardSummaryUseCase = remember(context) {
-        createDashboardSummaryUseCase(context)
+    val liveDashboardSummaryUseCase = remember(context) {
+        createLiveDashboardSummaryUseCase(context)
     }
 
     val showBottomBar = currentDestination?.route in listOf(
@@ -160,7 +161,6 @@ fun AreteApp() {
             startDestination = "gate",
             modifier = Modifier.padding(innerPadding)
         ) {
-
             composable("gate") {
                 GateScreen(
                     onGoLogin = {
@@ -203,7 +203,6 @@ fun AreteApp() {
             }
 
             navigation(startDestination = "login", route = "auth") {
-
                 composable("login") {
                     LoginScreen(
                         onLoginSuccess = {
@@ -238,16 +237,15 @@ fun AreteApp() {
             }
 
             navigation(startDestination = Screen.Home.route, route = "main") {
-
                 composable(Screen.Home.route) {
-                    val dashboardViewModel: DashboardViewModel = viewModel(
-                        factory = DashboardViewModelFactory(dashboardSummaryUseCase)
-                    )
-                    DashboardScreen(viewModel = dashboardViewModel)
+                    HomeScreen()
                 }
 
                 composable(Screen.Focus.route) {
-                    FocusScreen()
+                    val dashboardViewModel: DashboardViewModel = viewModel(
+                        factory = DashboardViewModelFactory(liveDashboardSummaryUseCase)
+                    )
+                    FocusScreen(viewModel = dashboardViewModel)
                 }
 
                 composable(Screen.Settings.route) {
@@ -273,9 +271,9 @@ fun AreteApp() {
     }
 }
 
-private fun createDashboardSummaryUseCase(
+private fun createLiveDashboardSummaryUseCase(
     context: Context
-): GetDashboardSummaryUseCase {
+): GetLiveDashboardSummaryUseCase {
     val prefsManager = PreferencesManager(context)
     val usageRepoReal = UsageStatsRepository(context)
     val localUsageRepo: LocalUsageRepo = usageRepoReal
@@ -287,9 +285,17 @@ private fun createDashboardSummaryUseCase(
         }
     }
 
-    return GetDashboardSummaryUseCase(
+    val intensityProvider = object : IntensityProvider {
+        override suspend fun getIntensity(): String {
+            return prefsManager.interventionIntensity.first()
+        }
+    }
+
+
+    return GetLiveDashboardSummaryUseCase(
         localUsageRepo = localUsageRepo,
         enabledTrackedProvider = enabledProvider,
-        dashboardMetricsRepo = dashboardMetricsRepo
+        dashboardMetricsRepo = dashboardMetricsRepo,
+        intensityProvider = intensityProvider
     )
 }

@@ -1,8 +1,10 @@
 package com.qian.scrollsanity.domain.usecase.intervention
 
+import android.util.Log
 import com.qian.scrollsanity.data.usagedata.TrackedAppId
 import com.qian.scrollsanity.data.usagedata.TrackedApps
 import com.qian.scrollsanity.domain.policy.decision.DeviationInterventionPolicy
+import com.qian.scrollsanity.domain.policy.deviation.BehaviorSessionNormalizer
 import com.qian.scrollsanity.domain.policy.deviation.SessionBaselineCalculator
 import com.qian.scrollsanity.domain.policy.deviation.SessionDeviationCalculator
 import com.qian.scrollsanity.domain.policy.gating.CooldownPolicy
@@ -41,34 +43,78 @@ class MaybeRunInterventionCheckUseCase(
         state: InterventionSessionState,
         currentSessionMinutes: Int
     ): Pair<InterventionSessionState, TriggerResult> {
+        Log.d("InterventionCheck", "run started")
+        Log.d("InterventionCheck", "nowMs=$nowMs")
+        Log.d("InterventionCheck", "currentSessionMinutes=$currentSessionMinutes")
+        Log.d("InterventionCheck", "state=$state")
 
         if (!state.inBlockedSession) {
+            Log.d("InterventionCheck", "skip: inBlockedSession=false")
             return state to TriggerResult.None
         }
 
         val intensity = intensityProvider.getIntensity().trim().lowercase()
         val cooldown = cooldownPolicy.cooldownMs(intensity)
-
         val due = (nowMs - state.lastCheckAtMs) >= cooldown
+
+        Log.d("InterventionCheck", "intensity=$intensity")
+        Log.d("InterventionCheck", "cooldownMs=$cooldown")
+        Log.d("InterventionCheck", "lastCheckAtMs=${state.lastCheckAtMs}")
+        Log.d("InterventionCheck", "due=$due")
+
         if (!due) {
+            Log.d("InterventionCheck", "skip: cooldown not due yet")
             return state to TriggerResult.None
         }
 
-        val enabledIds = enabledProvider.getEnabledTrackedIds()
+        val enabledIds: Set<TrackedAppId> = enabledProvider.getEnabledTrackedIds()
         val enabledPackages: Set<String> =
-            enabledIds.flatMap { id -> TrackedApps.metaFor(id).exactPackages }.toSet()
+            enabledIds.flatMap { id ->
+                TrackedApps.metaFor(id).exactPackages
+            }.toSet()
 
-        val sessions = localUsageRepo.getRecentSessions(
+        Log.d("InterventionCheck", "enabledIds=$enabledIds")
+        Log.d("InterventionCheck", "enabledPackages=$enabledPackages")
+
+        val rawSessions = localUsageRepo.getRecentSessions(
             enabledPackages = enabledPackages,
             days = 7
         ).filter { it.durationMinutes >= 1 }
 
-        if (sessions.isEmpty()) {
+        Log.d("InterventionCheck", "rawSessionsCount=${rawSessions.size}")
+
+        if (rawSessions.isEmpty()) {
+            Log.d("InterventionCheck", "skip: no recent sessions")
             val updatedState = state.copy(lastCheckAtMs = nowMs)
             return updatedState to TriggerResult.None
         }
 
-        val baseline = SessionBaselineCalculator.compute(sessions)
+        val normalizedSessions = BehaviorSessionNormalizer.normalize(rawSessions)
+
+        Log.d("InterventionCheck", "normalizedSessionsCount=${normalizedSessions.size}")
+        Log.d(
+            "InterventionCheck",
+            "latestNormalizedSession=${normalizedSessions.maxByOrNull { it.endMillis }}"
+        )
+
+        if (normalizedSessions.isEmpty()) {
+            Log.d("InterventionCheck", "skip: normalizedSessions empty")
+            val updatedState = state.copy(lastCheckAtMs = nowMs)
+            return updatedState to TriggerResult.None
+        }
+
+        val baseline = SessionBaselineCalculator.compute(normalizedSessions)
+
+        Log.d(
+            "InterventionCheck",
+            "baseline sampleCount=${baseline.sampleCount}, median=${baseline.medianMinutes}, mad=${baseline.madMinutes}"
+        )
+
+        if (baseline.sampleCount <= 0) {
+            Log.d("InterventionCheck", "skip: baseline sampleCount <= 0")
+            val updatedState = state.copy(lastCheckAtMs = nowMs)
+            return updatedState to TriggerResult.None
+        }
 
         val z = SessionDeviationCalculator.computeZ(
             currentSessionMinutes = currentSessionMinutes,
@@ -76,13 +122,13 @@ class MaybeRunInterventionCheckUseCase(
             sigmaMinutes = 1.0
         )
 
+        Log.d("InterventionCheck", "z=$z")
+
         val threshold = deviationPolicy.interventionThreshold(intensity)
+        Log.d("InterventionCheck", "threshold=$threshold")
 
         // Record latest evaluated values for dashboard display
-        recordDashboardMetricsUseCase.recordLatestEvaluation(
-            z = z,
-            threshold = threshold
-        )
+        recordDashboardMetricsUseCase.recordNextInterventionThreshold(threshold)
 
         val eval = deviationPolicy.evaluate(
             z = z,
@@ -90,43 +136,56 @@ class MaybeRunInterventionCheckUseCase(
             alreadyAskedThisSession = state.askedUsageTypeThisSession
         )
 
+        Log.d(
+            "InterventionCheck",
+            "eval ask=${eval.shouldAskUsageCheck}, trigger=${eval.shouldTriggerIntervention}, zScore=${eval.zScore}"
+        )
+
         val shouldResetAskState = deviationPolicy.shouldResetAskState(z)
+        Log.d("InterventionCheck", "shouldResetAskState=$shouldResetAskState")
 
         val updatedState = when {
             eval.shouldAskUsageCheck -> {
-                state.copy(
+                val newState = state.copy(
                     lastCheckAtMs = nowMs,
                     askedUsageTypeThisSession = true
                 )
+                Log.d("InterventionCheck", "state updated for AskUsageType: $newState")
+                newState
             }
 
             shouldResetAskState -> {
-                state.copy(
+                val newState = state.copy(
                     lastCheckAtMs = nowMs,
                     askedUsageTypeThisSession = false
                 )
+                Log.d("InterventionCheck", "state reset ask flag: $newState")
+                newState
             }
 
             else -> {
-                state.copy(lastCheckAtMs = nowMs)
+                val newState = state.copy(lastCheckAtMs = nowMs)
+                Log.d("InterventionCheck", "state updated with lastCheckAtMs only: $newState")
+                newState
             }
         }
 
         return when {
             eval.shouldAskUsageCheck -> {
+                Log.d("InterventionCheck", "return AskUsageType")
                 updatedState to TriggerResult.AskUsageType
             }
 
             eval.shouldTriggerIntervention -> {
+                Log.d("InterventionCheck", "return TriggerIntervention z=$z")
                 recordDashboardMetricsUseCase.recordTriggeredIntervention()
                 updatedState to TriggerResult.TriggerIntervention(z)
             }
 
             else -> {
+                Log.d("InterventionCheck", "return None")
                 updatedState to TriggerResult.None
             }
         }
     }
-
-
 }

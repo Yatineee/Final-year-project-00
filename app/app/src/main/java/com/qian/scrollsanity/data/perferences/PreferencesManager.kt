@@ -163,9 +163,13 @@ class PreferencesManager(private val context: Context) {
             else -> "MEDIUM"
         }
 
+        Log.d("PreferencesManager", "setInterventionIntensity input=$intensity safe=$safe")
+
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.INTERVENTION_INTENSITY] = safe
         }
+
+        Log.d("PreferencesManager", "setInterventionIntensity saved=$safe")
 
         if (syncCloud) {
             syncPreferencesToFirestore()
@@ -245,6 +249,10 @@ class PreferencesManager(private val context: Context) {
                 }
 
                 Log.d("PreferencesManager", "Preferences loaded from Firestore")
+                Log.d(
+                    "PreferencesManager",
+                    "loadPreferencesFromFirestore intensity=${firestorePrefs.interventionIntensity}"
+                )
                 true
             } else {
                 false

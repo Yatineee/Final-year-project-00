@@ -21,9 +21,9 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.load()
-    }
+//    LaunchedEffect(Unit) {
+//        viewModel.load()
+//    }
 
     val summary = uiState.summary
 
@@ -56,6 +56,16 @@ fun DashboardScreen(
         MetricCard(
             title = "Tracked apps usage today",
             value = summary?.trackedUsageTodayMinutes?.toHourMinuteText() ?: "0m"
+        )
+
+        MetricCard(
+            title = "In tracked session",
+            value = if (summary?.inTrackedSession == true) "Yes" else "No"
+        )
+
+        MetricCard(
+            title = "Current session duration",
+            value = summary?.currentSessionMinutes?.toHourMinuteText() ?: "0m"
         )
     }
 }
