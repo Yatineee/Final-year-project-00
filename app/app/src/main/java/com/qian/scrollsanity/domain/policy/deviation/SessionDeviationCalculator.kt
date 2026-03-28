@@ -3,14 +3,17 @@ package com.qian.scrollsanity.domain.policy.deviation
 import com.qian.scrollsanity.domain.model.deviation.SessionBaselineStats
 
 /**
- * Computes robust deviation score (Z-like score) for the current session length
- * against historical session baseline statistics.
+ * Computes a robust deviation score for the current session duration
+ * against the recent historical session baseline.
+ *
+ * Baseline is defined by:
+ * - median session duration
+ * - MAD (median absolute deviation)
  *
  * Formula:
  *   z = (currentSessionMinutes - medianMinutes) / (madMinutes + sigmaMinutes)
  *
- * sigmaMinutes is a smoothing term to avoid division by zero
- * when MAD is very small or zero.
+ * This is a robust Z-like score, not a mean/std-based standard z-score.
  */
 
 

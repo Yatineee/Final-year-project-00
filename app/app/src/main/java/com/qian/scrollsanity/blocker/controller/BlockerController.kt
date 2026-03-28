@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import com.qian.scrollsanity.blocker.ui.BlockerActivity
+import com.qian.scrollsanity.data.dashboard.DashboardMetricsRepoImpl
 import com.qian.scrollsanity.data.perferences.PreferencesManager
 import com.qian.scrollsanity.data.usagedata.TrackedAppId
 import com.qian.scrollsanity.data.usagedata.TrackedApps
@@ -13,6 +14,8 @@ import com.qian.scrollsanity.domain.policy.decision.DeviationInterventionPolicy
 import com.qian.scrollsanity.domain.policy.gating.CooldownPolicy
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
 import com.qian.scrollsanity.domain.trigger.InterventionSessionState
+import com.qian.scrollsanity.domain.usecase.dashboard.GetDashboardSummaryUseCase
+import com.qian.scrollsanity.domain.usecase.dashboard.RecordDashboardMetricsUseCase
 import com.qian.scrollsanity.domain.usecase.intervention.EnabledTrackedProvider
 import com.qian.scrollsanity.domain.usecase.intervention.IntensityProvider
 import com.qian.scrollsanity.domain.usecase.intervention.MaybeRunInterventionCheckUseCase
@@ -190,6 +193,25 @@ object BlockerController {
         }
     }
 
+    private fun buildDashboardSummaryUseCase(context: Context): GetDashboardSummaryUseCase {
+        val prefsManager = PreferencesManager(context)
+        val usageRepoReal = UsageStatsRepository(context)
+        val localUsageRepo: LocalUsageRepo = usageRepoReal
+        val dashboardMetricsRepo = DashboardMetricsRepoImpl(context)
+
+        val enabledProvider = object : EnabledTrackedProvider {
+            override suspend fun getEnabledTrackedIds(): Set<TrackedAppId> {
+                return prefsManager.enabledTrackedApps.first()
+            }
+        }
+
+        return GetDashboardSummaryUseCase(
+            localUsageRepo = localUsageRepo,
+            enabledTrackedProvider = enabledProvider,
+            dashboardMetricsRepo = dashboardMetricsRepo
+        )
+    }
+
     /**
      * Builds the use case with runtime providers backed by preferences and usage repository.
      */
@@ -197,6 +219,10 @@ object BlockerController {
         val prefsManager = PreferencesManager(context)
         val usageRepoReal = UsageStatsRepository(context)
         val localUsageRepo: LocalUsageRepo = usageRepoReal
+
+        val dashboardMetricsRepo = DashboardMetricsRepoImpl(context)
+        val recordDashboardMetricsUseCase =
+            RecordDashboardMetricsUseCase(dashboardMetricsRepo)
 
         val intensityProvider = object : IntensityProvider {
             override suspend fun getIntensity(): String {
@@ -215,7 +241,8 @@ object BlockerController {
             deviationPolicy = deviationPolicy,
             intensityProvider = intensityProvider,
             enabledProvider = enabledProvider,
-            localUsageRepo = localUsageRepo
+            localUsageRepo = localUsageRepo,
+            recordDashboardMetricsUseCase = recordDashboardMetricsUseCase
         )
     }
 

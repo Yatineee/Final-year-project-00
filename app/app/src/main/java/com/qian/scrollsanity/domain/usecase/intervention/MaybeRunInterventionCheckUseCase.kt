@@ -1,6 +1,5 @@
 package com.qian.scrollsanity.domain.usecase.intervention
 
-import android.util.Log
 import com.qian.scrollsanity.data.usagedata.TrackedAppId
 import com.qian.scrollsanity.data.usagedata.TrackedApps
 import com.qian.scrollsanity.domain.policy.decision.DeviationInterventionPolicy
@@ -9,6 +8,7 @@ import com.qian.scrollsanity.domain.policy.deviation.SessionDeviationCalculator
 import com.qian.scrollsanity.domain.policy.gating.CooldownPolicy
 import com.qian.scrollsanity.domain.repo.LocalUsageRepo
 import com.qian.scrollsanity.domain.trigger.InterventionSessionState
+import com.qian.scrollsanity.domain.usecase.dashboard.RecordDashboardMetricsUseCase
 
 sealed class TriggerResult {
     object None : TriggerResult()
@@ -27,22 +27,14 @@ interface EnabledTrackedProvider {
 /**
  * Checks whether the current tracked-session behavior deviates enough from
  * recent baseline behavior to require a usage check or intervention.
- *
- * Responsibilities:
- * - verify session gating conditions
- * - verify cooldown
- * - load recent tracked sessions
- * - compute deviation z-score
- * - evaluate pure decision rules through policy
- * - update session memory state
- * - return the next action for upper layers
  */
 class MaybeRunInterventionCheckUseCase(
     private val cooldownPolicy: CooldownPolicy,
     private val deviationPolicy: DeviationInterventionPolicy,
     private val intensityProvider: IntensityProvider,
     private val enabledProvider: EnabledTrackedProvider,
-    private val localUsageRepo: LocalUsageRepo
+    private val localUsageRepo: LocalUsageRepo,
+    private val recordDashboardMetricsUseCase: RecordDashboardMetricsUseCase
 ) {
     suspend fun run(
         nowMs: Long,
@@ -51,7 +43,6 @@ class MaybeRunInterventionCheckUseCase(
     ): Pair<InterventionSessionState, TriggerResult> {
 
         if (!state.inBlockedSession) {
-//            Log.d("InterventionCheck", "Skip: not in blocked session")
             return state to TriggerResult.None
         }
 
@@ -60,10 +51,6 @@ class MaybeRunInterventionCheckUseCase(
 
         val due = (nowMs - state.lastCheckAtMs) >= cooldown
         if (!due) {
-//            Log.d(
-//                "InterventionCheck",
-//                "Skip: cooldown not due, nowMs=$nowMs, lastCheckAtMs=${state.lastCheckAtMs}, cooldown=$cooldown"
-//            )
             return state to TriggerResult.None
         }
 
@@ -76,17 +63,8 @@ class MaybeRunInterventionCheckUseCase(
             days = 7
         ).filter { it.durationMinutes >= 1 }
 
-//        Log.d(
-//            "InterventionCheck",
-//            "enabledPackages=$enabledPackages, sessions=${sessions.size}, currentSessionMinutes=$currentSessionMinutes"
-//        )
-
         if (sessions.isEmpty()) {
             val updatedState = state.copy(lastCheckAtMs = nowMs)
-//            Log.d(
-//                "InterventionCheck",
-//                "No recent sessions found after filtering (duration >= 1 min), skip trigger"
-//            )
             return updatedState to TriggerResult.None
         }
 
@@ -98,10 +76,13 @@ class MaybeRunInterventionCheckUseCase(
             sigmaMinutes = 1.0
         )
 
-//        Log.d(
-//            "InterventionCheck",
-//            "currentSessionMinutes=$currentSessionMinutes, sessions=${sessions.size}, median=${baseline.medianMinutes}, mad=${baseline.madMinutes}, sampleCount=${baseline.sampleCount}, z=$z, intensity=$intensity"
-//        )
+        val threshold = deviationPolicy.interventionThreshold(intensity)
+
+        // Record latest evaluated values for dashboard display
+        recordDashboardMetricsUseCase.recordLatestEvaluation(
+            z = z,
+            threshold = threshold
+        )
 
         val eval = deviationPolicy.evaluate(
             z = z,
@@ -110,11 +91,6 @@ class MaybeRunInterventionCheckUseCase(
         )
 
         val shouldResetAskState = deviationPolicy.shouldResetAskState(z)
-
-//        Log.d(
-//            "InterventionCheck",
-//            "eval: shouldAskUsageCheck=${eval.shouldAskUsageCheck}, shouldTriggerIntervention=${eval.shouldTriggerIntervention}, askedUsageTypeThisSession=${state.askedUsageTypeThisSession}, shouldResetAskState=$shouldResetAskState"
-//        )
 
         val updatedState = when {
             eval.shouldAskUsageCheck -> {
@@ -138,19 +114,19 @@ class MaybeRunInterventionCheckUseCase(
 
         return when {
             eval.shouldAskUsageCheck -> {
-//                Log.d("InterventionCheck", "Result: AskUsageType")
                 updatedState to TriggerResult.AskUsageType
             }
 
             eval.shouldTriggerIntervention -> {
-//                Log.d("InterventionCheck", "Result: TriggerIntervention(z=$z)")
+                recordDashboardMetricsUseCase.recordTriggeredIntervention()
                 updatedState to TriggerResult.TriggerIntervention(z)
             }
 
             else -> {
-//                Log.d("InterventionCheck", "Result: None")
                 updatedState to TriggerResult.None
             }
         }
     }
+
+
 }

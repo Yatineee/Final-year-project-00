@@ -1,5 +1,6 @@
 package com.qian.scrollsanity
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,11 +10,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -22,13 +34,21 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.qian.scrollsanity.data.config.FirestoreRepository
+import com.qian.scrollsanity.data.dashboard.DashboardMetricsRepoImpl
 import com.qian.scrollsanity.data.perferences.PreferencesManager
 import com.qian.scrollsanity.data.sync.UsageSyncHelper
+import com.qian.scrollsanity.data.usagedata.TrackedAppId
+import com.qian.scrollsanity.data.usagedata.UsageStatsRepository
+import com.qian.scrollsanity.domain.repo.LocalUsageRepo
+import com.qian.scrollsanity.domain.usecase.dashboard.GetDashboardSummaryUseCase
+import com.qian.scrollsanity.domain.usecase.intervention.EnabledTrackedProvider
 import com.qian.scrollsanity.service.UsageSyncService
+import com.qian.scrollsanity.ui.dashboard.DashboardScreen
+import com.qian.scrollsanity.ui.dashboard.DashboardViewModel
+import com.qian.scrollsanity.ui.dashboard.DashboardViewModelFactory
 import com.qian.scrollsanity.ui.screens.FocusScreen
 import com.qian.scrollsanity.ui.screens.GateScreen
 import com.qian.scrollsanity.ui.screens.GoalsScreen
-import com.qian.scrollsanity.ui.screens.HomeScreen
 import com.qian.scrollsanity.ui.screens.InterestsScreen
 import com.qian.scrollsanity.ui.screens.LoginScreen
 import com.qian.scrollsanity.ui.screens.OnboardingScreen
@@ -36,15 +56,17 @@ import com.qian.scrollsanity.ui.screens.RegisterScreen
 import com.qian.scrollsanity.ui.screens.SettingsScreen
 import com.qian.scrollsanity.ui.settings.SettingsViewModel
 import com.qian.scrollsanity.ui.theme.AreteTheme
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Start usage sync service if user is logged in
         val prefsManager = PreferencesManager(this)
-        kotlinx.coroutines.MainScope().launch {
+
+        MainScope().launch {
             prefsManager.isUserLoggedIn.collect { isLoggedIn ->
                 if (isLoggedIn) {
                     UsageSyncService.start(this@MainActivity)
@@ -67,9 +89,9 @@ class MainActivity : ComponentActivity() {
 
 // Navigation destinations
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
-    object Home : Screen("home", "Today", Icons.Default.Home)
-    object Focus : Screen("focus", "Focus", Icons.Rounded.Timer)
-    object Settings : Screen("settings", "Settings", Icons.Default.Settings)
+    data object Home : Screen("home", "Today", Icons.Default.Home)
+    data object Focus : Screen("focus", "Focus", Icons.Rounded.Timer)
+    data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
 val bottomNavItems = listOf(
@@ -89,7 +111,6 @@ fun AreteApp() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    // ✅ Create SettingsViewModel once (stable across recompositions)
     val settingsViewModel = remember {
         SettingsViewModel(
             firestoreRepo = FirestoreRepository(),
@@ -97,7 +118,10 @@ fun AreteApp() {
         )
     }
 
-    // Determine if we should show bottom bar (only for main app screens)
+    val dashboardSummaryUseCase = remember(context) {
+        createDashboardSummaryUseCase(context)
+    }
+
     val showBottomBar = currentDestination?.route in listOf(
         Screen.Home.route,
         Screen.Focus.route,
@@ -112,7 +136,9 @@ fun AreteApp() {
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.title) },
                             label = { Text(screen.title) },
-                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                            selected = currentDestination
+                                ?.hierarchy
+                                ?.any { it.route == screen.route } == true,
                             onClick = {
                                 navController.navigate(screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
@@ -135,7 +161,6 @@ fun AreteApp() {
             modifier = Modifier.padding(innerPadding)
         ) {
 
-            // 1) GATE (top-level)
             composable("gate") {
                 GateScreen(
                     onGoLogin = {
@@ -156,7 +181,6 @@ fun AreteApp() {
                 )
             }
 
-            // 2) ONBOARDING (top-level)
             composable("onboarding") {
                 OnboardingScreen(
                     onFinished = {
@@ -167,7 +191,6 @@ fun AreteApp() {
                 )
             }
 
-            // Goals screen
             composable("goals") {
                 GoalsScreen(onBack = { navController.popBackStack() })
             }
@@ -179,7 +202,6 @@ fun AreteApp() {
                 )
             }
 
-            // 3) AUTH flow (nested)
             navigation(startDestination = "login", route = "auth") {
 
                 composable("login") {
@@ -187,7 +209,6 @@ fun AreteApp() {
                         onLoginSuccess = {
                             UsageSyncService.start(context)
 
-                            // ✅ go to gate, not main
                             navController.navigate("gate") {
                                 popUpTo("auth") { inclusive = true }
                             }
@@ -203,7 +224,6 @@ fun AreteApp() {
                         onRegisterSuccess = {
                             UsageSyncService.start(context)
 
-                            // ✅ go to gate, not main
                             navController.navigate("gate") {
                                 popUpTo("auth") { inclusive = true }
                             }
@@ -217,18 +237,24 @@ fun AreteApp() {
                 }
             }
 
-            // 4) MAIN app flow (nested)
             navigation(startDestination = Screen.Home.route, route = "main") {
 
-                composable(Screen.Home.route) { HomeScreen() }
+                composable(Screen.Home.route) {
+                    val dashboardViewModel: DashboardViewModel = viewModel(
+                        factory = DashboardViewModelFactory(dashboardSummaryUseCase)
+                    )
+                    DashboardScreen(viewModel = dashboardViewModel)
+                }
 
-                composable(Screen.Focus.route) { FocusScreen() }
+                composable(Screen.Focus.route) {
+                    FocusScreen()
+                }
 
                 composable(Screen.Settings.route) {
                     SettingsScreen(
                         viewModel = settingsViewModel,
                         onOpenGoals = { navController.navigate("goals") },
-                        onOpenInterests = {navController.navigate("interests")},
+                        onOpenInterests = { navController.navigate("interests") },
                         onLogout = {
                             scope.launch {
                                 UsageSyncService.stop(context)
@@ -245,4 +271,25 @@ fun AreteApp() {
             }
         }
     }
+}
+
+private fun createDashboardSummaryUseCase(
+    context: Context
+): GetDashboardSummaryUseCase {
+    val prefsManager = PreferencesManager(context)
+    val usageRepoReal = UsageStatsRepository(context)
+    val localUsageRepo: LocalUsageRepo = usageRepoReal
+    val dashboardMetricsRepo = DashboardMetricsRepoImpl(context)
+
+    val enabledProvider = object : EnabledTrackedProvider {
+        override suspend fun getEnabledTrackedIds(): Set<TrackedAppId> {
+            return prefsManager.enabledTrackedApps.first()
+        }
+    }
+
+    return GetDashboardSummaryUseCase(
+        localUsageRepo = localUsageRepo,
+        enabledTrackedProvider = enabledProvider,
+        dashboardMetricsRepo = dashboardMetricsRepo
+    )
 }
